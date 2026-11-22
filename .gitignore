@@ -1,0 +1,8 @@
+.venv/
+.venv_viejo_*/
+__pycache__/
+*.py[cod]
+.DS_Store
+instalacion_log.txt
+juego_log.txt
+modelos/*.task
