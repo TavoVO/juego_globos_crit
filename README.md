@@ -13,7 +13,16 @@ Proyecto con **OpenCV** (cámara e imágenes) y **MediaPipe** (detección de man
 
 ---
 
-## 1. Instalación (Mac)
+## 1. Instalación
+
+**Windows (PowerShell)**. Abre la carpeta del proyecto en VS Code y ejecuta esto en su terminal:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+**macOS**. Desde la carpeta que contiene `juego_globos_crit`:
 
 ```bash
 cd juego_globos_crit
@@ -24,7 +33,18 @@ pip install -r requirements.txt
 
 La primera vez que se corre un script con MediaPipe se descarga el modelo (~5-10 MB) a la carpeta `modelos/`. Se necesita internet solo esa vez.
 
-## 2. Correr
+## 2. Demostración para clase
+
+En la terminal **PowerShell** de VS Code, desde la carpeta del proyecto y con las dependencias instaladas, ejecuta un comando a la vez. Cierra la ventana con **Q** entre demos.
+
+| Qué mostrar | Comando en Windows |
+|---|---|
+| OpenCV abre la cámara y pone texto sobre el video. | `.\.venv\Scripts\python.exe .\01_camara_texto.py` |
+| MediaPipe sigue el índice para dibujar en el aire. | `.\.venv\Scripts\python.exe .\02_dedo_mano.py` |
+| MediaPipe Pose sigue las piernas. Levanta la rodilla que pida el programa para ver el contador. | `.\.venv\Scripts\python.exe .\03_piernas.py` |
+| Propuesta para el CRIT. Pose sigue las muñecas y MediaPipe Hands reconoce la pinza. Pulsa **1**, **2** o **3** para elegir colores, formas o letras. | `.\.venv\Scripts\python.exe .\04_juego_globos.py --control cuerpo` |
+
+Para explicar el código del juego, abre [`04_juego_globos.py`](04_juego_globos.py). Ahí se importan `cv2` y `mediapipe as mp`, y se crean los detectores `mp.tasks.vision.HandLandmarker` y, en modo cuerpo, `mp.tasks.vision.PoseLandmarker`.
 
 En **VS Code**, abre `04_juego_globos.py` y pulsa **▶ Ejecutar archivo de Python**. El archivo usa automáticamente el entorno `.venv` del proyecto si lo ejecutas con otro Python; no necesitas activar el entorno ni usar `jugar.command`. Si es la primera vez desde VS Code, acepta su solicitud de acceso a la cámara.
 
@@ -54,7 +74,7 @@ El juego tiene menú (se elige con el dedo), cuenta regresiva, temporizador, rac
 > Escribe un programa en Python que use la librería OpenCV para abrir la cámara de mi computadora, mostrar el video en una ventana y desplegar un texto encima de la imagen. Que se cierre con la tecla Q. Explica cómo instalar lo necesario.
 
 **Prompt 2 (corregir errores):**
-> Corrí tu código en Python y me salió este error: `<pegar el error completo>`. Estoy en una Mac con Python 3.x. ¿Qué significa y cómo lo resuelvo paso a paso?
+> Corrí tu código en Python y me salió este error: `<pegar el error completo>`. Uso `<Windows o macOS>` con Python `<versión>`. ¿Qué significa y cómo lo resuelvo paso a paso?
 
 **Prompt 3 (MediaPipe manos):**
 > Usando OpenCV y MediaPipe en Python, haz un programa que detecte la punta del dedo índice con la cámara y que al moverlo dibuje una línea en la pantalla, como si pintara en el aire. Usa la API nueva de MediaPipe Tasks (HandLandmarker).
@@ -63,7 +83,7 @@ El juego tiene menú (se elige con el dedo), cuenta regresiva, temporizador, rac
 > Con MediaPipe Pose (PoseLandmarker) detecta las piernas, calcula el ángulo de la rodilla y cuenta cuántas veces levanto cada rodilla.
 
 **Prompt 5 (juego):**
-> Crea un juego con OpenCV y MediaPipe donde aparezcan globos de colores flotando; el jugador los atrapa poniendo el dedo encima y los lleva a la mano de un globero dibujado en la pantalla. El globero pide un color, forma o letra específica.
+> Crea un juego con OpenCV y MediaPipe donde aparezcan globos flotando. El jugador los atrapa juntando el pulgar y el índice y los lleva a la mano de un globero. El globero pide un color, forma o letra específica. Agrega un modo que use MediaPipe Pose para mover el cursor con la muñeca.
 
 ## 4. Errores comunes y cómo resolverlos
 
@@ -80,24 +100,15 @@ El juego tiene menú (se elige con el dedo), cuenta regresiva, temporizador, rac
 
 ---
 
-## 5. MediaPipe vs. Pose: ¿cuál es la diferencia?
+## 5. MediaPipe, Pose y OpenPose
 
-Es una confusión común: **Pose no es una librería distinta, es una de las soluciones de MediaPipe.** Cuando se habla de "Pose" como alternativa casi siempre se refiere a **OpenPose** u otros modelos de estimación de pose.
-
-- **MediaPipe** (Google) es un *framework* con varios modelos listos: **Hands** (21 puntos por mano), **Pose** (33 puntos del cuerpo), **Face Mesh** (478 puntos de la cara), **Holistic** (todo junto), gestos, segmentación, etc.
-- **MediaPipe Pose** detecta **una persona** con 33 puntos (hombros, codos, muñecas, caderas, rodillas, tobillos, pies) e incluye profundidad aproximada (z) y visibilidad.
-- **OpenPose** (Universidad Carnegie Mellon) detecta **varias personas a la vez** con 18–25 puntos de cuerpo, más manos y cara. Es más pesado, normalmente necesita **GPU** y su instalación es complicada.
-
-| | MediaPipe (Hands / Pose) | OpenPose |
+| Tecnología | Qué detecta | Uso en el proyecto |
 |---|---|---|
-| Instalación | `pip install mediapipe` | Compilar o Docker, complejo |
-| Hardware | Corre en laptop, celular, sin GPU | Normalmente necesita GPU |
-| Personas | 1 (Pose) / hasta 2 manos (configurable) | Muchas personas a la vez |
-| Puntos del cuerpo | 33 (incluye pies) | 18 o 25 |
-| Velocidad | Tiempo real (~30 FPS en CPU) | Lento sin GPU |
-| Uso ideal | Apps interactivas, juegos, rehabilitación en casa | Investigación, análisis de grupos, deporte |
+| [MediaPipe Hand Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker?tab=Python) | 21 puntos por mano, entre ellos las yemas. | Dibujo con el índice y agarre con pinza. |
+| [MediaPipe Pose Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker?tab=Python) | 33 puntos por persona, entre ellos muñecas, caderas y rodillas. | Se configura para seguir a una persona. Mueve el cursor con las muñecas y permite contar levantamientos de rodilla en la demo de piernas. |
+| [OpenPose](https://github.com/CMU-Perceptual-Computing-Lab/openpose) | Puntos de cuerpo, manos, cara y pies de varias personas. | Es otra biblioteca de estimación de pose. El prototipo usa MediaPipe. |
 
-**Conclusión para el CRIT:** MediaPipe es la mejor opción porque funciona con una laptop y cámara web común, en tiempo real, y una sola persona (el paciente) es justo el caso de uso. Para dedos y motricidad fina se usa **Hands**; para piernas, tronco y brazos, **Pose**.
+La estimación de pose localiza partes del cuerpo para seguir cómo cambian de posición. MediaPipe es el conjunto de herramientas que aporta tanto el detector de pose como el de manos. En el juego, el primero indica dónde está la muñeca y el segundo distingue cuándo se juntan los dedos.
 
 ---
 
@@ -115,15 +126,15 @@ Ideas clave que se repiten: **retroalimentación inmediata**, **dificultad ajust
 
 ## 7. Propuesta para el CRIT: "El globero"
 
-**Objetivo:** juego de rehabilitación que combina **movimiento físico** (alcance del brazo, coordinación ojo-mano, motricidad de hombro y piernas) con **estimulación cognitiva** (colores, formas, letras, lateralidad, atención y seguimiento de instrucciones).
+**Objetivo del prototipo:** combinar **movimiento físico** (alcance del brazo, coordinación ojo-mano y pinza) con una **tarea cognitiva** (identificar colores, formas o letras y seguir un pedido). El movimiento de piernas se demuestra por separado.
 
 **Dinámica:** aparecen globos flotando. El globero pide uno ("Dame un globo ROJO" / "...con TRIÁNGULO" / "...con la letra M"). El niño lo atrapa juntando pulgar e índice sobre el globo y lo lleva hasta la mano del globero manteniendo la pinza cerrada.
 
-**Por qué funciona para distintas poblaciones:**
+**Opciones para una demostración adaptable:**
 
 - *Adaptación motora:* la cantidad de globos se ajusta con `--globos`. El agarre actual requiere pinza con pulgar e índice; en `--control cuerpo` se mueve con la muñeca y se exige la pinza de esa mano. El terapeuta puede pausar o terminar la actividad en cualquier momento.
-- *Síndrome de Down:* refuerza colores, formas y vocales con recompensa visual inmediata ("MUY BIEN!", racha, el ramo del globero crece).
-- *Autismo:* instrucción única, clara y visual; sin castigos (un error no resta puntos, solo recuerda qué buscar).
+- *Reconocimiento visual:* se puede elegir una categoría y recibir una señal visual cuando la entrega es correcta.
+- *Seguimiento de instrucciones:* la burbuja muestra un solo pedido a la vez y lo recuerda si se entrega otro globo.
 - *Piernas:* `03_piernas.py` (marcha con indicación DERECHA/IZQUIERDA) se puede convertir en un nivel donde se "patea" o se sube la rodilla para reventar globos.
 
 **Lo que registra el juego:** puntos, globos correctos, precisión. **Siguientes pasos:** guardar cada sesión en un CSV (fecha, paciente, aciertos, tiempo de reacción) para que el terapeuta vea la evolución; agregar sonido y voz para pacientes que aún no leen; un nivel de números (contar globos) y uno de secuencias (primero rojo, luego azul).

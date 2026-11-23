@@ -78,8 +78,8 @@ def obtener_modelo(nombre):
     return ruta
 
 
-def crear_detector_manos(num_manos=2):
-    opciones = vision.HandLandmarkerOptions(
+def opciones_manos(num_manos=2):
+    return vision.HandLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=obtener_modelo("manos")),
         running_mode=vision.RunningMode.VIDEO,
         num_hands=num_manos,
@@ -87,11 +87,14 @@ def crear_detector_manos(num_manos=2):
         min_hand_presence_confidence=0.5,
         min_tracking_confidence=0.5,
     )
-    return vision.HandLandmarker.create_from_options(opciones)
 
 
-def crear_detector_pose():
-    opciones = vision.PoseLandmarkerOptions(
+def crear_detector_manos(num_manos=2):
+    return vision.HandLandmarker.create_from_options(opciones_manos(num_manos))
+
+
+def opciones_pose():
+    return vision.PoseLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=obtener_modelo("pose")),
         running_mode=vision.RunningMode.VIDEO,
         num_poses=1,
@@ -99,7 +102,10 @@ def crear_detector_pose():
         min_pose_presence_confidence=0.5,
         min_tracking_confidence=0.5,
     )
-    return vision.PoseLandmarker.create_from_options(opciones)
+
+
+def crear_detector_pose():
+    return vision.PoseLandmarker.create_from_options(opciones_pose())
 
 
 def a_imagen_mp(frame_bgr):

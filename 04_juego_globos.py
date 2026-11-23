@@ -42,6 +42,7 @@ if __name__ == "__main__":
         os.execv(str(python_local), [str(python_local), str(Path(__file__).resolve()), *sys.argv[1:]])
 
 import cv2
+import mediapipe as mp
 import numpy as np
 
 import graficos as G
@@ -747,15 +748,21 @@ def main():
     parser.add_argument("--tiempo", type=int, default=90, help="duración de la partida en segundos")
     parser.add_argument("--dwell", type=float, default=0.4, help="opción antigua; ahora se agarra cerrando la pinza")
     parser.add_argument("--globos", type=int, default=5, help="globos en pantalla")
-    parser.add_argument("--control", choices=["mano", "cuerpo"], default="mano")
+    parser.add_argument("--control", choices=["mano", "cuerpo"], default="mano",
+                        help="mano: índice y pinza; cuerpo: muñecas con MediaPipe Pose y agarre con pinza")
     parser.add_argument("--sin-sonido", action="store_true")
     args = parser.parse_args()
     if args.tiempo <= 0 or args.globos <= 0:
         parser.error("--tiempo y --globos deben ser mayores que cero")
 
     cap = U.abrir_camara(args.camara)
-    detector = U.crear_detector_manos(2) if args.control == "mano" else U.crear_detector_pose()
-    detector_manos = U.crear_detector_manos(2) if args.control == "cuerpo" else None
+    # Hand Landmarker detecta el pulgar y el índice para calcular la pinza.
+    detector_manos = mp.tasks.vision.HandLandmarker.create_from_options(U.opciones_manos())
+    detector_pose = None
+    if args.control == "cuerpo":
+        # Pose Landmarker sigue las muñecas para mover los cursores con los brazos.
+        detector_pose = mp.tasks.vision.PoseLandmarker.create_from_options(U.opciones_pose())
+        print("Control cuerpo: MediaPipe Pose sigue las muñecas y MediaPipe Hands detecta la pinza.")
     pinzas_previas = {}
     reloj = U.MarcaTiempo()
 
@@ -797,9 +804,12 @@ def main():
         t = ahora - t0
 
         imagen, marca = U.a_imagen_mp(frame), reloj.ms()
-        res = detector.detect_for_video(imagen, marca)
-        res_manos = detector_manos.detect_for_video(imagen, marca) if detector_manos else None
-        cursores, manos = leer_cursores(res, w, h, args.control, pinzas_previas, res_manos)
+        res_manos = detector_manos.detect_for_video(imagen, marca)
+        if detector_pose is None:
+            cursores, manos = leer_cursores(res_manos, w, h, args.control, pinzas_previas)
+        else:
+            res_pose = detector_pose.detect_for_video(imagen, marca)
+            cursores, manos = leer_cursores(res_pose, w, h, args.control, pinzas_previas, res_manos)
         frame = cv2.multiply(frame, vineta, scale=1 / 255)
 
         for x, y in clics:
@@ -831,9 +841,9 @@ def main():
             cv2.setWindowProperty(VENTANA, cv2.WND_PROP_FULLSCREEN,
                                   cv2.WINDOW_FULLSCREEN if pantalla_completa else cv2.WINDOW_NORMAL)
 
-    detector.close()
-    if detector_manos:
-        detector_manos.close()
+    detector_manos.close()
+    if detector_pose is not None:
+        detector_pose.close()
     cap.release()
     cv2.destroyAllWindows()
 
