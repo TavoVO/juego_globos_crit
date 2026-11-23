@@ -2,6 +2,8 @@
 
 Proyecto con **OpenCV** (cámara e imágenes) y **MediaPipe** (detección de manos y cuerpo) que avanza por pasos hasta llegar a un juego de rehabilitación: atrapar globos y llevárselos al globero.
 
+**[Guía para presentar el proyecto (PDF)](output/pdf/guia-atrapa-globos.pdf)**. Explica por qué se eligió MediaPipe, cómo se reconoce la pinza y cómo mostrar las cuatro demos en clase desde Windows.
+
 | Archivo | Qué hace |
 |---|---|
 | `01_camara_texto.py` | Abre la cámara y despliega texto (título, fecha, FPS). |
