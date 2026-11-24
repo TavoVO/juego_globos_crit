@@ -2,7 +2,7 @@
 
 Proyecto con **OpenCV** (cámara e imágenes) y **MediaPipe** (detección de manos y cuerpo) que avanza por pasos hasta llegar a un juego de rehabilitación: atrapar globos y llevárselos al globero.
 
-**[Guía para presentar el proyecto (PDF)](output/pdf/guia-atrapa-globos.pdf)**. Explica por qué se eligió MediaPipe, cómo se reconoce la pinza y cómo mostrar las cuatro demos en clase desde Windows.
+**[Guía para presentar el proyecto (PDF)](output/pdf/guia-atrapa-globos.pdf)**. Explica por qué se eligió MediaPipe, cómo se reconoce la pinza y cómo mostrar las cuatro demos en clase desde Windows. Los números de línea de sus ejemplos corresponden a la versión anterior del juego. Las opciones actuales se describen abajo.
 
 | Archivo | Qué hace |
 |---|---|
@@ -67,6 +67,13 @@ Teclas del juego: **1/2/3** jugar Colores/Formas/Letras · **ESPACIO** empezar �
 Durante la partida y la cuenta regresiva aparecen los botones **Pausar/Continuar** y **Terminar**. Puedes hacer clic con el ratón o mantener el cursor de la mano sobre ellos durante 1.2 segundos. La pausa congela el tiempo, los globos y los efectos; **Terminar** muestra los resultados obtenidos hasta ese momento, incluso si estás en pausa.
 
 El juego tiene menú (se elige con el dedo), cuenta regresiva, temporizador, rachas, confeti, sonidos de macOS y pantalla final con estrellas. La cámara se ve a color (efecto espejo) y el contorno de la mano se dibuja encima para saber dónde está el dedo.
+
+**Opciones del menú**
+
+- **Colores:** rojo, azul y amarillo. **Formas:** círculo, cuadrado y triángulo. **Letras:** A, B y C. Por defecto, cada partida empieza con un globo de cada opción de la categoría.
+- **Velocidad:** Lenta, Normal o Rápida. Solo cambia qué tan rápido flotan los globos. El tiempo de la partida se mantiene.
+- **Vista Cámara:** el video ocupa la pantalla. **Vista Fondo:** el juego usa un fondo limpio y muestra la imagen de la cámara a color en un recuadro con borde marcado. El seguimiento de la mano funciona en las dos vistas.
+- **Ver puntuaciones:** abre el historial desde el menú. También aparece en la pantalla final. Cuando se agota el tiempo o se pulsa **Terminar** tras empezar, el juego guarda fecha, categoría, velocidad, puntos y aciertos en `historial_puntuaciones.jsonl`, en la carpeta del proyecto. Si cambias de carpeta, puedes copiar ese archivo para conservar tus resultados.
 
 ---
 

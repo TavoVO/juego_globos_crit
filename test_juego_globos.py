@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace as Datos
 import sys
 import subprocess
+from tempfile import TemporaryDirectory
 import unicodedata
 import unittest
 from unittest.mock import patch
@@ -186,6 +187,91 @@ class PinzaTests(unittest.TestCase):
         self.assertFalse(any(c.pinza for c in cursores))
         cursores, _ = globos.leer_cursores(res, 1000, 1000, "cuerpo", {}, self.resultado(25))
         self.assertTrue(all(c.pinza for c in cursores))
+
+
+class OpcionesJuegoTests(unittest.TestCase):
+    def clic(self, juego, clave):
+        x, y, w, h = juego.botones_visibles()[clave]
+        juego.clic(x + w // 2, y + h // 2)
+
+    def test_tres_opciones_visibles_y_distintas_en_cada_categoria(self):
+        juego = globos.Juego(1280, 720, 90, 3, lambda _: None)
+        categorias = {"COLORES": {"ROJO", "AZUL", "AMARILLO"},
+                      "FORMAS": {"CIRCULO", "CUADRADO", "TRIANGULO"},
+                      "LETRAS": {"A", "B", "C"}}
+        for categoria, esperados in categorias.items():
+            juego.ir_menu()
+            self.clic(juego, categoria)
+            self.assertTrue(all(g.visible() for g in juego.globos))
+            for g in juego.globos:
+                g.reiniciar()
+            self.assertEqual({g.atributo(categoria) for g in juego.globos}, esperados)
+
+    def test_velocidad_cambia_desplazamiento_sin_cambiar_temporizador(self):
+        juego = globos.Juego(1280, 720, 90, 3, lambda _: None)
+        movimientos = []
+        with patch.object(globos.time, "monotonic", return_value=100) as reloj:
+            for velocidad in ("Lenta", "Normal", "Rápida"):
+                juego.ir_menu()
+                self.clic(juego, velocidad)
+                juego.empezar()
+                globo = juego.globos[0]
+                globo.y, globo.vy = 450, 60
+                reloj.return_value = juego.inicio + 0.1
+                juego.actualizar([], 0.1, 0)
+                movimientos.append(450 - globo.y)
+                self.assertAlmostEqual(juego.tiempo_restante(), 89.9)
+        self.assertLess(movimientos[0], movimientos[1])
+        self.assertLess(movimientos[1], movimientos[2])
+
+    def test_fondo_muestra_video_nitido_e_independiente_del_lienzo(self):
+        juego = globos.Juego(1280, 720, 90, 3, lambda _: None)
+        self.clic(juego, "Fondo")
+        self.assertEqual(juego.vista, "Fondo")
+        camara = np.full((720, 1280, 3), (50, 180, 240), dtype=np.uint8)
+        cuadro = globos.crear_fondo(1280, 720)
+        juego.dibujar(cuadro, [], [], 0, 0, False, imagen_camara=camara)
+        x, y, w, h = juego.rect_camara
+        np.testing.assert_array_equal(cuadro[y + h // 2, x + w // 2], camara[0, 0])
+        self.assertFalse(np.array_equal(cuadro[0, 0], camara[0, 0]))
+        self.clic(juego, "Cámara")
+        self.assertEqual(juego.vista, "Cámara")
+
+    def test_historial_conserva_partidas_terminadas_y_puede_navegarse(self):
+        with TemporaryDirectory() as carpeta:
+            archivo = Path(carpeta) / "partidas.jsonl"
+            juego = globos.Juego(1280, 720, 90, 3, lambda _: None, archivo)
+            juego.iniciar_cuenta("LETRAS")
+            juego.terminar()    # La cuenta regresiva todavía no cuenta como partida.
+            self.assertFalse(archivo.exists())
+            for i in range(8):
+                juego.ir_menu()
+                self.clic(juego, "Rápida")
+                self.clic(juego, "FORMAS")
+                juego.empezar()
+                juego.puntos, juego.aciertos = i * 10, i
+                juego.alternar_pausa()
+                self.clic(juego, "terminar")
+            juego.terminar()    # No se registra una partida terminada dos veces.
+            self.clic(juego, "historial")
+            self.assertEqual(juego.paginas_historial(), 2)
+            self.clic(juego, "siguiente")
+            self.assertEqual(juego.pagina_historial, 1)
+            self.clic(juego, "volver")
+            self.assertEqual(juego.estado, "fin")
+            otro = globos.Juego(1280, 720, 90, 3, lambda _: None, archivo)
+            self.assertEqual([p.puntos for p in otro.historial.partidas], list(range(0, 80, 10)))
+            self.assertEqual((otro.historial.partidas[-1].categoria, otro.historial.partidas[-1].velocidad),
+                             ("Formas", "Rápida"))
+
+    def test_historial_tolera_linea_incompleta_sin_perder_la_siguiente(self):
+        with TemporaryDirectory() as carpeta:
+            archivo = Path(carpeta) / "partidas.jsonl"
+            archivo.write_text('{"fecha":', encoding="utf-8")
+            historial = globos.Historial(archivo)
+            registro = globos.Puntuacion("24/11/26 12:00", "Colores", "Normal", 15, 1)
+            historial.agregar(registro)
+            self.assertEqual(globos.Historial(archivo).partidas, [registro])
 
 
 if __name__ == "__main__":

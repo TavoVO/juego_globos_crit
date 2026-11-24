@@ -11,11 +11,11 @@ Cómo se juega
    puntos y confeti; si no, el globo se revienta y te recuerda cuál buscar
    (sin restar puntos).
 
-Te ves a ti mismo a color en la pantalla (efecto espejo) y el contorno de tu
-mano se dibuja encima, para que sepas exactamente dónde estás.
+En el menú puedes elegir la velocidad y ver la cámara como fondo o en un
+recuadro. El historial guarda las partidas terminadas en esta computadora.
 
 Ejecutar:  python 04_juego_globos.py
-Opciones:  --tiempo 90   --globos 5   --control mano|cuerpo   --sin-sonido
+Opciones:  --tiempo 90   --globos 3   --control mano|cuerpo   --sin-sonido
 Teclas:    1/2/3 = jugar ese modo   ESPACIO = empezar   M = menú   R = reiniciar
            P/ESPACIO = pausar/continuar   T = terminar partida
            F = pantalla completa    H = mostrar/ocultar mano    Q o ESC = salir
@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 # Permite ejecutar este archivo directamente con el Python elegido en VS Code.
@@ -47,16 +48,18 @@ import numpy as np
 
 import graficos as G
 import utilidades as U
+from puntuaciones import Historial, Puntuacion
 
 VENTANA = "Atrapa Globos - CRIT"
 ANCHO_LIENZO = 1280
 
 COLORES = G.COLORES_GLOBO
-FORMAS = ["CIRCULO", "CUADRADO", "TRIANGULO", "ESTRELLA"]
-LETRAS = list("AEIOUMPS")
 MODOS = {1: "COLORES", 2: "FORMAS", 3: "LETRAS"}
 CAMPO = {"COLORES": "color", "FORMAS": "forma", "LETRAS": "letra"}
-OPCIONES = {"COLORES": list(COLORES), "FORMAS": FORMAS, "LETRAS": LETRAS}
+OPCIONES = {"COLORES": tuple(COLORES), "FORMAS": G.FORMAS_GLOBO, "LETRAS": G.LETRAS_GLOBO}
+VELOCIDADES = {"Lenta": 0.6, "Normal": 1.0, "Rápida": 1.6}
+VISTAS = ("Cámara", "Fondo")
+FILAS_HISTORIAL = 7
 
 FELICITACIONES = ["¡Muy bien!", "¡Excelente!", "¡Genial!", "¡Lo lograste!", "¡Bravo!"]
 
@@ -86,35 +89,34 @@ class Sonido:
 # Globo
 # ----------------------------------------------------------------------------
 class Globo:
-    def __init__(self, x_min, x_max, alto, escala):
+    def __init__(self, x_min, x_max, alto, escala, atributo_fijo, carril):
         self.x_min, self.x_max, self.alto, self.S = x_min, x_max, alto, escala
+        self.carril = carril
+        self.color = "AZUL"    # Las formas y letras se distinguen por el símbolo.
+        setattr(self, *atributo_fijo)
         self.reiniciar(primera_vez=True)
 
-    def reiniciar(self, forzar=None, primera_vez=False):
+    def reiniciar(self, primera_vez=False):
         self.r = int(random.randint(46, 58) * self.S)
-        self.x = random.uniform(self.x_min + self.r, self.x_max - self.r)
-        if primera_vez:   # al empezar, algunos globos ya están en pantalla
-            self.y = random.uniform(self.alto * 0.35, self.alto * 1.4)
+        x_min, x_max = self.x_min + self.r, self.x_max - self.r
+        self.x = x_min + (x_max - x_min) * self.carril
+        if primera_vez:
+            self.y = random.uniform(self.alto * 0.42, self.alto * 0.73)
         else:
-            self.y = self.alto + self.r * 1.5 + random.uniform(0, self.alto * 0.4)
+            self.y = random.uniform(self.alto * 0.76, self.alto * 0.85)
         self.vy = random.uniform(45, 80) * self.S
         self.fase = random.uniform(0, 2 * math.pi)
         self.x_osc = 0.0
-        self.color = random.choice(list(COLORES))
-        self.forma = random.choice(FORMAS)
-        self.letra = random.choice(LETRAS)
-        if forzar:
-            setattr(self, forzar[0], forzar[1])
         self.agarrado = False
 
     def atributo(self, modo):
         return getattr(self, CAMPO[modo])
 
-    def actualizar(self, dt, t):
+    def actualizar(self, dt, t, velocidad=1.0):
         if not self.agarrado:
-            self.y -= self.vy * dt
+            self.y -= self.vy * dt * velocidad
             self.x_osc = 14 * self.S * math.sin(t * 1.4 + self.fase)
-            if self.y < -self.r * 1.5:              # se escapó por arriba
+            if self.y < -self.r * 0.5:
                 self.reiniciar()
 
     def centro(self):
@@ -129,7 +131,7 @@ class Globo:
 
     def dibujar(self, img, modo, t):
         tipo = modo if modo in ("FORMAS", "LETRAS") else None
-        simbolo = {"FORMAS": self.forma, "LETRAS": self.letra}.get(modo)
+        simbolo = self.atributo(modo) if tipo else None
         spr, ax, ay, ky = G.sprite_globo(COLORES[self.color], self.r, tipo, simbolo)
         cx, cy = self.centro()
         # hilo ondulado
@@ -278,30 +280,47 @@ def arco(img, centro, radio, fraccion, color, grosor, fondo=(60, 60, 60)):
 # Juego
 # ----------------------------------------------------------------------------
 class Juego:
-    def __init__(self, w, h, duracion, n_globos, sonido):
+    def __init__(self, w, h, duracion, n_globos, sonido, archivo_historial=None):
         self.w, self.h = w, h
         self.S = S = min(h / 720, w / 1280)   # escala para cualquier resolución
         self.duracion, self.n_globos = duracion, n_globos
         self.sonido = sonido
         self.efectos = Efectos(S)
+        self.historial = Historial(archivo_historial)
+        self.velocidad = "Normal"
+        self.vista = "Cámara"
 
-        self.spr_globero, mx, my = G.sprite_globero(int(460 * S))
+        self.spr_globero, mx, my = G.sprite_globero(int(290 * S))
         gh, gw = self.spr_globero.shape[:2]
-        self.pos_globero = (w - gw - int(15 * S), h - gh)
+        self.pos_globero = (w - gw - int(24 * S), h - gh - int(242 * S))
         self.zona = (self.pos_globero[0] + int(mx), self.pos_globero[1] + int(my))
-        self.radio_zona = int(72 * S)
-        self.x_max_globos = self.zona[0] - self.radio_zona - int(30 * S)
-        self.centro_juego = self.x_max_globos // 2 + int(20 * S)
+        self.radio_zona = int(62 * S)
+        self.x_max_globos = min(self.zona[0] - self.radio_zona - int(30 * S), w - int(385 * S))
+        self.centro_juego = self.x_max_globos // 2
 
         # tarjetas del menú
-        tw, th, sep = int(230 * S), int(200 * S), int(26 * S)
+        tw, th, sep = int(226 * S), int(190 * S), int(22 * S)
         x0 = self.centro_juego - (3 * tw + 2 * sep) // 2
-        self.tarjetas = {MODOS[i + 1]: (x0 + i * (tw + sep), int(330 * S), tw, th) for i in range(3)}
+        self.tarjetas = {modo: (x0 + i * (tw + sep), int(222 * S), tw, th) for i, modo in enumerate(MODOS.values())}
+        self.ajustes = {}
+        for y, opciones in ((448, VELOCIDADES), (510, VISTAS)):
+            for i, opcion in enumerate(opciones):
+                x = x0 + int((144 + i * 140) * S)
+                self.ajustes[opcion] = (x, int(y * S), int(128 * S), int(47 * S))
+        self.acceso_historial = (x0, int(583 * S), int(234 * S), int(52 * S))
+        self.rect_camara = (w - int(368 * S), h - int(220 * S), int(350 * S), int(202 * S))
         # botones de la pantalla final
-        bw, bh = int(285 * S), int(80 * S)
-        cy = int(h * 0.5 + 175 * S)
-        self.botones = {"otra": (w // 2 - bw - int(15 * S), cy, bw, bh, "Jugar otra vez", (40, 170, 80)),
-                        "menu": (w // 2 + int(15 * S), cy, bw, bh, "Menú", (70, 110, 240))}
+        bw, bh, espacio = int(190 * S), int(62 * S), int(13 * S)
+        cy = h // 2 + int(175 * S)
+        x_fin = w // 2 - (3 * bw + 2 * espacio) // 2
+        self.botones = {clave: (x_fin + i * (bw + espacio), cy, bw, bh) for i, clave in
+                        enumerate(("otra", "historial", "menu"))}
+        y_historial = h // 2 + int(220 * S)
+        self.botones_historial = {
+            "volver": (w // 2 - int(425 * S), y_historial, int(170 * S), int(52 * S)),
+            "anterior": (w // 2 + int(100 * S), y_historial, int(150 * S), int(52 * S)),
+            "siguiente": (w // 2 + int(275 * S), y_historial, int(150 * S), int(52 * S)),
+        }
         self.controles = {
             "pausa": (int(18 * S), h - int(64 * S), int(220 * S), int(48 * S)),
             "terminar": (int(252 * S), h - int(64 * S), int(220 * S), int(48 * S)),
@@ -323,7 +342,10 @@ class Juego:
         self.modo = modo
         self.puntos = self.aciertos = self.errores = self.racha = self.mejor_racha = 0
         self.entregados = []
-        self.globos = [Globo(int(30 * self.S), self.x_max_globos, self.h, self.S) for _ in range(self.n_globos)]
+        valores = random.sample(OPCIONES[modo], len(OPCIONES[modo]))
+        self.globos = [Globo(int(30 * self.S), self.x_max_globos, self.h, self.S,
+                             (CAMPO[modo], valores[i % len(valores)]), (i + 0.5) / self.n_globos)
+                       for i in range(self.n_globos)]
         self.sostenido = None
         self.dueno_globo = None
         self.perdido = 0.0
@@ -331,6 +353,7 @@ class Juego:
         self.destello_hasta = 0.0
         self.dwell_ui = {}
         self.bloqueo_controles = False
+        self.objetivo = None
         self.nuevo_objetivo()
 
     def iniciar_cuenta(self, modo):
@@ -344,6 +367,9 @@ class Juego:
         self.inicio = time.monotonic()
 
     def terminar(self):
+        if self.estado == "jugando" or (self.estado == "pausa" and self.estado_antes_pausa == "jugando"):
+            self.historial.agregar(Puntuacion(datetime.now().strftime("%d/%m/%y %H:%M"), self.modo.capitalize(),
+                                              self.velocidad, self.puntos, self.aciertos))
         self.estado = "fin"
         self.dwell_ui = {}
         if self.sostenido:
@@ -375,30 +401,72 @@ class Juego:
         self.dwell_ui = {}
         self.bloqueo_controles = True
 
+    def botones_visibles(self):
+        if self.estado == "menu":
+            return {**self.tarjetas, **self.ajustes, "historial": self.acceso_historial}
+        if self.estado == "fin":
+            return self.botones
+        if self.estado == "historial":
+            visibles = {"volver": self.botones_historial["volver"]}
+            if self.pagina_historial > 0:
+                visibles["anterior"] = self.botones_historial["anterior"]
+            if self.pagina_historial + 1 < self.paginas_historial():
+                visibles["siguiente"] = self.botones_historial["siguiente"]
+            return visibles
+        return self.controles
+
+    def paginas_historial(self):
+        return max(1, math.ceil(len(self.historial.partidas) / FILAS_HISTORIAL))
+
+    @staticmethod
+    def dentro(posicion, rect):
+        x, y, w, h = rect
+        return x <= posicion[0] < x + w and y <= posicion[1] < y + h
+
+    def activar_boton(self, clave):
+        self.dwell_ui = {}
+        if clave in self.tarjetas:
+            self.iniciar_cuenta(clave)
+        elif clave in VELOCIDADES:
+            self.velocidad = clave
+        elif clave in VISTAS:
+            self.vista = clave
+        elif clave == "pausa":
+            self.alternar_pausa()
+        elif clave == "terminar":
+            self.terminar()
+        elif clave == "otra":
+            self.iniciar_cuenta(self.modo)
+        elif clave == "menu":
+            self.ir_menu()
+        elif clave == "historial":
+            self.regreso_historial = self.estado
+            self.pagina_historial = 0
+            self.estado = "historial"
+        elif clave == "volver":
+            self.estado = self.regreso_historial
+        elif clave == "anterior":
+            self.pagina_historial -= 1
+        elif clave == "siguiente":
+            self.pagina_historial += 1
+        # Evita repetir la acción si el dedo sigue sobre el botón.
+        self.bloqueo_controles = True
+
     def clic(self, x, y):
-        if self.estado not in ("jugando", "cuenta", "pausa"):
-            return
-        for clave, (bx, by, bw, bh) in self.controles.items():
-            if bx <= x <= bx + bw and by <= y <= by + bh:
-                self.alternar_pausa() if clave == "pausa" else self.terminar()
+        for clave, rect in self.botones_visibles().items():
+            if self.dentro((x, y), rect):
+                self.activar_boton(clave)
                 return
 
     def sobre_controles(self, posicion):
-        return any(x <= posicion[0] <= x + w and y <= posicion[1] <= y + h
-                   for x, y, w, h in self.controles.values())
+        return any(self.dentro(posicion, rect) for rect in self.controles.values())
 
     # --- lógica -------------------------------------------------------------
     def nuevo_objetivo(self):
-        visibles = [g.atributo(self.modo) for g in self.globos if g.visible() and not g.agarrado]
-        self.objetivo = random.choice(visibles or OPCIONES[self.modo])
-        self.asegurar_objetivo()
-
-    def asegurar_objetivo(self):
-        """Garantiza que siempre exista al menos un globo correcto."""
-        if any(g.atributo(self.modo) == self.objetivo for g in self.globos):
-            return
-        libres = [g for g in self.globos if not g.agarrado]
-        max(libres, key=lambda g: g.y).reiniciar(forzar=(CAMPO[self.modo], self.objetivo))
+        disponibles = [g.atributo(self.modo) for g in self.globos if g.visible()]
+        if not disponibles:
+            disponibles = [g.atributo(self.modo) for g in self.globos]
+        self.objetivo = random.choice([valor for valor in disponibles if valor != self.objetivo] or disponibles)
 
     def avisar(self, texto, color, segundos=1.4):
         self.mensaje = (G.sprite_pildora(texto, int(34 * self.S), color), time.monotonic() + segundos)
@@ -408,16 +476,12 @@ class Juego:
         return max(0.0, self.duracion - (ahora - self.inicio))
 
     def hover(self, clave, rect, cursores, dt, segundos=1.2):
-        """Botón que se activa dejando el dedo encima. Regresa (progreso, activado)."""
-        x, y, w, h = rect[:4]
-        dentro = any(x < c.posicion[0] < x + w and y < c.posicion[1] < y + h for c in cursores)
+        """Indica si el cursor lleva suficiente tiempo encima del botón."""
+        dentro = any(self.dentro(c.posicion, rect) for c in cursores)
         p = self.dwell_ui.get(clave, 0.0)
         p = p + dt if dentro else max(0.0, p - 2 * dt)
         self.dwell_ui[clave] = p
-        if p >= segundos:
-            self.dwell_ui = {}
-            return 1.0, True
-        return p / segundos, False
+        return p >= segundos
 
     def actualizar(self, cursores, dt, t):
         ahora = time.monotonic()
@@ -431,31 +495,19 @@ class Juego:
                 nuevas_pinzas.append(c)
                 self.pinzas_listas.discard(c.identidad)
 
-        if self.estado in ("jugando", "cuenta", "pausa"):
-            sobre_control = any(self.sobre_controles(c.posicion) for c in cursores)
-            if self.bloqueo_controles:
-                if not sobre_control:
-                    self.bloqueo_controles = False
-            else:
-                for clave, rect in self.controles.items():
-                    _, listo = self.hover(clave, rect, cursores, dt)
-                    if listo:
-                        self.alternar_pausa() if clave == "pausa" else self.terminar()
-                        return
-        if self.estado == "pausa":
+        botones = self.botones_visibles()
+        if self.bloqueo_controles:
+            self.bloqueo_controles = any(self.dentro(c.posicion, rect) for c in cursores for rect in botones.values())
+        else:
+            for clave, rect in botones.items():
+                if self.hover(clave, rect, cursores, dt):
+                    self.activar_boton(clave)
+                    return
+        if self.estado in ("pausa", "historial"):
             return
         self.t_animacion += dt
         t = self.t_animacion
-        if self.estado in ("menu", "cuenta", "fin"):
-            for g in self.globos:
-                g.actualizar(dt, t)
-
-        if self.estado == "menu":
-            for modo, rect in self.tarjetas.items():
-                _, listo = self.hover(modo, rect, cursores, dt)
-                if listo:
-                    self.iniciar_cuenta(modo)
-                    return
+        if self.estado in ("menu", "fin"):
             return
 
         if self.estado == "cuenta":
@@ -468,21 +520,12 @@ class Juego:
                 self.empezar()
             return
 
-        if self.estado == "fin":
-            for clave, rect in self.botones.items():
-                _, listo = self.hover(clave, rect, cursores, dt)
-                if listo:
-                    self.iniciar_cuenta(self.modo) if clave == "otra" else self.ir_menu()
-                    return
-            return
-
         # --- jugando ---
         if self.tiempo_restante() <= 0:
             self.terminar()
             return
         for g in self.globos:
-            g.actualizar(dt, t)
-        self.asegurar_objetivo()
+            g.actualizar(dt, t, VELOCIDADES[self.velocidad])
 
         if self.sostenido is None:
             for c in nuevas_pinzas:
@@ -550,26 +593,32 @@ class Juego:
             g.reiniciar()
 
     # --- dibujo -------------------------------------------------------------
-    def dibujar(self, img, cursores, manos, t, dt, mostrar_manos):
+    def dibujar(self, img, cursores, manos, t, dt, mostrar_manos, imagen_camara=None):
         S = self.S
         t = self.t_animacion
         ahora = self.t_pausa if self.estado == "pausa" else time.monotonic()
+
+        if self.estado == "historial":
+            self.dibujar_historial(img)
+            for c in cursores:
+                dibujar_cursor(img, c.posicion, t, S, activo=c.pinza)
+            return
 
         self.dibujar_ramo(img, t)
         G.pegar(img, self.spr_globero, *self.pos_globero)
         if self.estado in ("jugando", "cuenta", "pausa"):
             self.dibujar_zona(img, t, ahora < self.destello_hasta)
 
-        modo_globo = self.modo if self.estado != "menu" else "COLORES"
-        for g in self.globos:
-            if g is not self.sostenido:
-                g.dibujar(img, modo_globo, t)
+        if self.estado != "menu":
+            for g in self.globos:
+                if g is not self.sostenido:
+                    g.dibujar(img, self.modo, t)
         if self.sostenido is not None:
             g = self.sostenido
             c = g.centro()
             self.linea_guia(img, (c[0], c[1] + g.r), self.zona, t)
             G.pegar_centro(img, G.sprite_brillo(int(g.r * 1.7), (255, 240, 140)), *c, alpha=0.9)
-            g.dibujar(img, modo_globo, t)
+            g.dibujar(img, self.modo, t)
 
         self.efectos.actualizar_y_dibujar(img, 0 if self.estado == "pausa" else dt, ahora)
 
@@ -592,22 +641,51 @@ class Juego:
         if self.estado in ("jugando", "cuenta", "pausa"):
             self.dibujar_controles(img)
 
-        if mostrar_manos:
+        if imagen_camara is not None and self.estado != "fin":
+            self.dibujar_camara(img, imagen_camara, manos if mostrar_manos else [])
+        elif mostrar_manos and imagen_camara is None:
             dibujar_manos(img, manos, S)
         for c in cursores:
             dibujar_cursor(img, c.posicion, t, S, activo=c.pinza)
 
-    def dibujar_controles(self, img):
+    def dibujar_camara(self, img, imagen, manos):
+        x, y, w, h = self.rect_camara
         S = self.S
-        for clave, (x, y, w, h) in self.controles.items():
+        G.pegar(img, G.sprite_panel(w, h, (16, 29, 52), 255, int(14 * S), (147, 231, 251), 3), x, y)
+        G.pegar_izq(img, G.sprite_texto("Tu cámara", int(18 * S)), x + int(12 * S), y + int(16 * S))
+        py, margen = y + int(32 * S), int(7 * S)
+        disponible_w, disponible_h = w - 2 * margen, y + h - margen - py
+        ih, iw = imagen.shape[:2]
+        escala = min(disponible_w / iw, disponible_h / ih)
+        vw, vh = max(1, round(iw * escala)), max(1, round(ih * escala))
+        vista = cv2.resize(imagen, (vw, vh), interpolation=cv2.INTER_AREA)
+        manos_pequenas = [[(round(px * vw / iw), round(py * vh / ih)) for px, py in mano] for mano in manos]
+        dibujar_manos(vista, manos_pequenas, escala)
+        vx, vy = x + (w - vw) // 2, py + (disponible_h - vh) // 2
+        img[vy:vy + vh, vx:vx + vw] = vista
+
+    def dibujar_boton(self, img, clave, rect, texto, color=(38, 62, 105), seleccionado=False):
+        x, y, w, h = rect
+        S = self.S
+        borde = (158, 238, 243) if seleccionado else (180, 198, 226)
+        G.pegar(img, G.sprite_panel(w, h, color, 255, int(13 * S), borde, max(1, int(2 * S))), x, y)
+        G.pegar_centro(img, G.sprite_texto(texto, int(23 * S)), x + w // 2, y + h // 2)
+        self.dibujar_progreso(img, clave, rect)
+
+    def dibujar_progreso(self, img, clave, rect):
+        prog = min(1.0, self.dwell_ui.get(clave, 0.0) / 1.2)
+        if prog > 0:
+            x, y, w, h = rect
+            margen = int(12 * self.S)
+            comienzo = (x + margen, y + h - int(7 * self.S))
+            fin = (comienzo[0] + int((w - 2 * margen) * prog), comienzo[1])
+            cv2.line(img, comienzo, fin, G.bgr(G.DORADO), max(2, int(4 * self.S)), cv2.LINE_AA)
+
+    def dibujar_controles(self, img):
+        for clave, rect in self.controles.items():
             texto = ("Continuar [P]" if self.estado == "pausa" else "Pausar [P]") if clave == "pausa" else "Terminar [T]"
             color = (55, 110, 210) if clave == "pausa" else (200, 65, 65)
-            G.pegar(img, G.sprite_panel(w, h, color, 240, int(14 * S), (255, 255, 255), 2), x, y)
-            G.pegar_centro(img, G.sprite_texto(texto, int(24 * S)), x + w // 2, y + h // 2)
-            progreso = min(1.0, self.dwell_ui.get(clave, 0.0) / 1.2)
-            if progreso > 0:
-                cv2.line(img, (x + 10, y + h - 5), (x + 10 + int((w - 20) * progreso), y + h - 5),
-                         (255, 255, 255), max(2, int(4 * S)), cv2.LINE_AA)
+            self.dibujar_boton(img, clave, rect, texto, color)
 
     def dibujar_ramo(self, img, t):
         hx, hy = self.zona
@@ -658,7 +736,7 @@ class Juego:
         G.pegar_izq(img, G.sprite_texto(str(self.puntos), int(46 * S)), int(92 * S), int(57 * S))
         # modo y racha
         y = int(125 * S)
-        chip = G.sprite_pildora(self.modo.capitalize(), int(24 * S), (70, 110, 240))
+        chip = G.sprite_pildora(f"{self.modo.capitalize()} / {self.velocidad}", int(22 * S), (52, 82, 167))
         G.pegar(img, chip, int(18 * S), y - chip.shape[0] // 2)
         if self.racha >= 2:
             chip2 = G.sprite_pildora(f"Racha x{self.racha}", int(24 * S), (235, 90, 40))
@@ -672,7 +750,7 @@ class Juego:
         arco(img, c, int(42 * S), frac, col, max(5, int(8 * S)), (90, 90, 100))
         G.pegar_centro(img, G.sprite_texto(str(int(math.ceil(restante))), int(38 * S)), *c)
         # pedido del globero
-        burbuja = G.sprite_burbuja(self.modo, self.objetivo, round(S, 2))
+        burbuja = G.sprite_burbuja(self.modo, self.objetivo, round(S * 0.9, 2))
         bx = self.w - burbuja.shape[1] - int(8 * S)
         G.pegar(img, burbuja, bx, int(6 * S + 3 * S * math.sin(t * 2)))
         # mensaje
@@ -681,20 +759,23 @@ class Juego:
 
     def dibujar_menu(self, img, t):
         S = self.S
-        titulo = G.sprite_titulo("ATRAPA GLOBOS", int(92 * S))
-        G.pegar_centro(img, titulo, self.centro_juego, int(120 * S + 6 * S * math.sin(t * 2)))
-        sub = G.sprite_pildora("Junta pulgar e índice para agarrar un globo", int(27 * S), (35, 40, 60))
-        G.pegar_centro(img, sub, self.centro_juego, int(250 * S))
-        for modo, (x, y, w, h) in self.tarjetas.items():
-            prog = self.dwell_ui.get(modo, 0.0) / 1.2
-            G.pegar(img, G.sprite_tarjeta(modo, w, h, prog > 0), x, y)
-            if prog > 0:
-                bx0, bx1, by = x + int(20 * S), x + w - int(20 * S), y + h - int(16 * S)
-                cv2.line(img, (bx0, by), (bx1, by), (200, 200, 200), max(6, int(10 * S)), cv2.LINE_AA)
-                cv2.line(img, (bx0, by), (int(bx0 + (bx1 - bx0) * prog), by), G.bgr(G.DORADO),
-                         max(6, int(10 * S)), cv2.LINE_AA)
-        txt = G.sprite_pildora("Pon tu dedo sobre un juego para empezar", int(26 * S), (40, 170, 80))
-        G.pegar_centro(img, txt, self.centro_juego, int(600 * S))
+        titulo = G.sprite_titulo("ATRAPA GLOBOS", int(84 * S))
+        G.pegar_centro(img, titulo, self.centro_juego, int(98 * S + 4 * S * math.sin(t * 2)))
+        sub = G.sprite_pildora("Junta pulgar e índice para atrapar un globo", int(24 * S), (35, 40, 60))
+        G.pegar_centro(img, sub, self.centro_juego, int(170 * S))
+        for modo, rect in self.tarjetas.items():
+            x, y, w, h = rect
+            G.pegar(img, G.sprite_tarjeta(modo, w, h, self.dwell_ui.get(modo, 0) > 0), x, y)
+            self.dibujar_progreso(img, modo, rect)
+        x0 = self.acceso_historial[0]
+        for nombre, y in (("Velocidad", 471), ("Vista", 533)):
+            G.pegar_izq(img, G.sprite_texto(nombre, int(24 * S), borde=2), x0, int(y * S))
+        for opcion, rect in self.ajustes.items():
+            activo = opcion in (self.velocidad, self.vista)
+            self.dibujar_boton(img, opcion, rect, opcion, (14, 112, 119) if activo else (38, 62, 105), activo)
+        self.dibujar_boton(img, "historial", self.acceso_historial, "Ver historial")
+        ayuda = G.sprite_texto("Elige con el dedo o haz clic", int(20 * S), borde=2)
+        G.pegar_izq(img, ayuda, x0 + int(260 * S), int(610 * S))
 
     def dibujar_cuenta(self, img, ahora):
         transcurrido = ahora - self.t_cuenta
@@ -719,16 +800,45 @@ class Juego:
             G.pegar_centro(img, G.sprite_estrella(int((90 if i == 1 else 74) * S), i < estrellas),
                            cx + (i - 1) * int(100 * S), cy - int((110 if i == 1 else 100) * S))
         lineas = [f"Puntos: {self.puntos}", f"Globos entregados: {self.aciertos}",
-                  f"Precisión: {precision:.0f}%   ·   Mejor racha: {self.mejor_racha}"]
+                  f"Precisión: {precision:.0f}%   /   Mejor racha: {self.mejor_racha}"]
         for i, l in enumerate(lineas):
             G.pegar_centro(img, G.sprite_texto(l, int((38 if i == 0 else 28) * S)), cx, cy + int((-20 + i * 48) * S))
-        for clave, (x, y, w, h, texto, color) in self.botones.items():
-            G.pegar(img, G.sprite_panel(w, h, color, 240, h // 2, (255, 255, 255), 3), x, y)
-            G.pegar_centro(img, G.sprite_texto(texto, int(28 * S)), x + w // 2, y + h // 2)
-            prog = self.dwell_ui.get(clave, 0.0) / 1.2
-            if prog > 0:
-                cv2.line(img, (x + h // 2, y + h - int(10 * S)), (int(x + h // 2 + (w - h) * prog), y + h - int(10 * S)),
-                         (255, 255, 255), max(4, int(6 * S)), cv2.LINE_AA)
+        etiquetas = {"otra": "Jugar otra vez", "historial": "Historial", "menu": "Menú"}
+        for clave, rect in self.botones.items():
+            self.dibujar_boton(img, clave, rect, etiquetas[clave], (26, 130, 94) if clave == "otra" else (38, 62, 105))
+
+    def dibujar_historial(self, img):
+        S = self.S
+        cx, cy = self.w // 2, self.h // 2
+        ancho, alto = int(920 * S), int(600 * S)
+        x0, y0 = cx - ancho // 2, cy - alto // 2
+        panel = G.sprite_panel(ancho, alto, (21, 32, 55), 255, int(24 * S), (176, 202, 235), 3)
+        G.pegar(img, panel, x0, y0)
+        G.pegar_centro(img, G.sprite_texto("Historial de puntuaciones", int(40 * S)), cx, y0 + int(58 * S))
+        if self.historial.partidas:
+            columnas = (47, 290, 470, 645, 766)
+            encabezados = ("Fecha y hora", "Categoría", "Velocidad", "Puntos", "Aciertos")
+            inicio = len(self.historial.partidas) - self.pagina_historial * FILAS_HISTORIAL
+            filas = reversed(self.historial.partidas[max(0, inicio - FILAS_HISTORIAL):inicio])
+            for x, texto in zip(columnas, encabezados):
+                sprite = G.sprite_texto(texto, int(18 * S), (172, 223, 248))
+                G.pegar_izq(img, sprite, x0 + int(x * S), y0 + int(118 * S))
+            for i, fila in enumerate(filas):
+                y = y0 + int((143 + i * 46) * S)
+                fondo = (35, 51, 81) if i % 2 == 0 else (28, 43, 71)
+                G.pegar(img, G.sprite_panel(ancho - int(66 * S), int(39 * S), fondo, 255, int(6 * S)),
+                        x0 + int(33 * S), y)
+                campos = (fila.fecha, fila.categoria, fila.velocidad, str(fila.puntos), str(fila.aciertos))
+                for x, texto in zip(columnas, campos):
+                    G.pegar_izq(img, G.sprite_texto(texto, int(21 * S)), x0 + int(x * S), y + int(20 * S))
+        else:
+            G.pegar_centro(img, G.sprite_texto("Aquí aparecerá tu primera partida", int(28 * S)), cx, cy)
+        if self.historial.error:
+            G.pegar_centro(img, G.sprite_texto(self.historial.error, int(18 * S), G.DORADO), cx, y0 + int(478 * S))
+        pagina = f"Página {self.pagina_historial + 1} de {self.paginas_historial()}"
+        G.pegar_centro(img, G.sprite_texto(pagina, int(20 * S)), cx - int(75 * S), cy + int(246 * S))
+        for clave, rect in self.botones_visibles().items():
+            self.dibujar_boton(img, clave, rect, clave.capitalize())
 
 
 # ----------------------------------------------------------------------------
@@ -742,12 +852,21 @@ def crear_vineta(w, h):
     return cv2.merge([(m * 255).astype(np.uint8)] * 3)
 
 
+def crear_fondo(w, h):
+    """Fondo oscuro con un degradado suave para realzar globos y botones."""
+    horizontal = np.linspace(0, 1, w, dtype=np.float32)[None, :]
+    vertical = np.linspace(0, 1, h, dtype=np.float32)[:, None]
+    mezcla = 0.7 * vertical + 0.3 * horizontal
+    arriba, abajo = np.array([70, 44, 28]), np.array([101, 57, 42])  # BGR
+    return (arriba + mezcla[..., None] * (abajo - arriba)).astype(np.uint8)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Atrapa globos y llévalos al globero")
     parser.add_argument("--camara", type=int, default=0)
     parser.add_argument("--tiempo", type=int, default=90, help="duración de la partida en segundos")
     parser.add_argument("--dwell", type=float, default=0.4, help="opción antigua; ahora se agarra cerrando la pinza")
-    parser.add_argument("--globos", type=int, default=5, help="globos en pantalla")
+    parser.add_argument("--globos", type=int, default=3, help="globos en pantalla")
     parser.add_argument("--control", choices=["mano", "cuerpo"], default="mano",
                         help="mano: índice y pinza; cuerpo: muñecas con MediaPipe Pose y agarre con pinza")
     parser.add_argument("--sin-sonido", action="store_true")
@@ -772,9 +891,11 @@ def main():
     fh, fw = frame.shape[:2]
     w, h = ANCHO_LIENZO, int(round(fh * ANCHO_LIENZO / fw))
     vineta = crear_vineta(w, h)
+    fondo = crear_fondo(w, h)
 
     print("Preparando gráficos...")
-    juego = Juego(w, h, args.tiempo, args.globos, Sonido(not args.sin_sonido))
+    archivo_historial = Path(__file__).resolve().with_name("historial_puntuaciones.jsonl")
+    juego = Juego(w, h, args.tiempo, args.globos, Sonido(not args.sin_sonido), archivo_historial)
 
     cv2.namedWindow(VENTANA, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(VENTANA, w, h)
@@ -797,7 +918,7 @@ def main():
         if not ok:
             break
         frame = cv2.flip(frame, 1)                       # efecto espejo: te ves como en un espejo
-        if frame.shape[1] != w:
+        if frame.shape[:2] != (h, w):
             frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
         ahora = time.monotonic()
         dt, prev = min(ahora - prev, 0.1), ahora
@@ -810,14 +931,14 @@ def main():
         else:
             res_pose = detector_pose.detect_for_video(imagen, marca)
             cursores, manos = leer_cursores(res_pose, w, h, args.control, pinzas_previas, res_manos)
-        frame = cv2.multiply(frame, vineta, scale=1 / 255)
-
         for x, y in clics:
             juego.clic(x, y)
         clics.clear()
         juego.actualizar(cursores, dt, t)
-        juego.dibujar(frame, cursores, manos, t, dt, mostrar_manos)
-        cv2.imshow(VENTANA, frame)
+        usar_fondo = juego.vista == "Fondo"
+        lienzo = fondo.copy() if usar_fondo else cv2.multiply(frame, vineta, scale=1 / 255)
+        juego.dibujar(lienzo, cursores, manos, t, dt, mostrar_manos, imagen_camara=frame if usar_fondo else None)
+        cv2.imshow(VENTANA, lienzo)
 
         tecla = cv2.waitKey(1) & 0xFF
         if tecla in (ord("q"), 27):

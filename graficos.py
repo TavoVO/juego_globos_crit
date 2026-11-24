@@ -15,11 +15,10 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 COLORES_GLOBO = {
     "ROJO": (235, 60, 60),
     "AZUL": (45, 125, 245),
-    "VERDE": (40, 185, 90),
     "AMARILLO": (252, 205, 25),
-    "MORADO": (150, 85, 225),
-    "NARANJA": (255, 140, 30),
 }
+FORMAS_GLOBO = ("CIRCULO", "CUADRADO", "TRIANGULO")
+LETRAS_GLOBO = ("A", "B", "C")
 
 TINTA = (35, 40, 60)          # texto oscuro
 DORADO = (255, 196, 30)
@@ -448,19 +447,17 @@ def sprite_tarjeta(modo, w, h, activa):
                         width=int((12 if activa else 5) * e))
     cy = H * 0.40
     if modo == "COLORES":
-        for i, nombre in enumerate(["ROJO", "AZUL", "AMARILLO"]):
+        for i, nombre in enumerate(COLORES_GLOBO):
             g, gx, gy, _ = sprite_globo(COLORES_GLOBO[nombre], int(46 * e))
             gi = bgra_a_pil(g)
             img.alpha_composite(gi, (int(W / 2 + (i - 1) * 95 * e - gx), int(cy - gy - 10 * e)))
     elif modo == "FORMAS":
-        cols = [(235, 60, 60), (45, 125, 245), (40, 185, 90)]
-        for i, forma in enumerate(["CIRCULO", "CUADRADO", "ESTRELLA"]):
-            dibujar_forma(d, forma, (W / 2 + (i - 1) * 110 * e, cy), 40 * e, tuple(cols[i]) + (255,),
+        for i, forma in enumerate(FORMAS_GLOBO):
+            dibujar_forma(d, forma, (W / 2 + (i - 1) * 110 * e, cy), 40 * e, COLORES_GLOBO["AZUL"] + (255,),
                           TINTA + (255,), 3 * e)
     else:
-        cols = [(235, 60, 60), (45, 125, 245), (40, 185, 90)]
-        for i, letra in enumerate("ABC"):
+        for i, letra in enumerate(LETRAS_GLOBO):
             d.text((W / 2 + (i - 1) * 105 * e, cy), letra, font=fuente(120 * e), anchor="mm",
-                   fill=tuple(cols[i]) + (255,), stroke_width=int(4 * e), stroke_fill=TINTA + (255,))
+                   fill=COLORES_GLOBO["AZUL"] + (255,), stroke_width=int(4 * e), stroke_fill=TINTA + (255,))
     d.text((W / 2, H * 0.80), modo.capitalize(), font=fuente(62 * e), anchor="mm", fill=TINTA + (255,))
     return pil_a_bgra(img.resize((w, h), Image.LANCZOS))
