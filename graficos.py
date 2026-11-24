@@ -405,6 +405,16 @@ def _tam_que_cabe(texto, tam, ancho):
     return tam
 
 
+def texto_recortado(texto, tam, ancho):
+    """Acorta una etiqueta a la anchura indicada sin modificar el dato original."""
+    medir = fuente(tam).getlength
+    if medir(texto) <= ancho:
+        return texto
+    while texto and medir(texto + "...") > ancho:
+        texto = texto[:-1]
+    return texto + "..."
+
+
 # ----------------------------------------------------------------------------
 # Título y tarjetas del menú
 # ----------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 """Historial local de partidas. Cada línea contiene un resultado completo."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 import os
+
+SIN_NOMBRE = "Sin nombre"
 
 
 @dataclass(frozen=True)
@@ -11,6 +13,7 @@ class Puntuacion:
     velocidad: str
     puntos: int
     aciertos: int
+    nombre: str = SIN_NOMBRE
 
 
 class Historial:
@@ -27,6 +30,8 @@ class Historial:
                         continue
                     if (all(isinstance(campo, str) for campo in (registro.fecha, registro.categoria, registro.velocidad))
                             and all(isinstance(n, int) and n >= 0 for n in (registro.puntos, registro.aciertos))):
+                        if not isinstance(registro.nombre, str) or not registro.nombre.strip():
+                            registro = replace(registro, nombre=SIN_NOMBRE)
                         self.partidas.append(registro)
             except FileNotFoundError:
                 pass

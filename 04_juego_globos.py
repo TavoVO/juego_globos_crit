@@ -48,7 +48,7 @@ import numpy as np
 
 import graficos as G
 import utilidades as U
-from puntuaciones import Historial, Puntuacion
+from puntuaciones import Historial, Puntuacion, SIN_NOMBRE
 
 VENTANA = "Atrapa Globos - CRIT"
 ANCHO_LIENZO = 1280
@@ -60,6 +60,7 @@ OPCIONES = {"COLORES": tuple(COLORES), "FORMAS": G.FORMAS_GLOBO, "LETRAS": G.LET
 VELOCIDADES = {"Lenta": 0.6, "Normal": 1.0, "Rápida": 1.6}
 VISTAS = ("Cámara", "Fondo")
 FILAS_HISTORIAL = 7
+MAX_NOMBRE = 30
 
 FELICITACIONES = ["¡Muy bien!", "¡Excelente!", "¡Genial!", "¡Lo lograste!", "¡Bravo!"]
 
@@ -287,6 +288,8 @@ class Juego:
         self.sonido = sonido
         self.efectos = Efectos(S)
         self.historial = Historial(archivo_historial)
+        self.nombre = ""
+        self.borrador_nombre = None
         self.velocidad = "Normal"
         self.vista = "Cámara"
 
@@ -307,7 +310,8 @@ class Juego:
             for i, opcion in enumerate(opciones):
                 x = x0 + int((144 + i * 140) * S)
                 self.ajustes[opcion] = (x, int(y * S), int(128 * S), int(47 * S))
-        self.acceso_historial = (x0, int(583 * S), int(234 * S), int(52 * S))
+        self.campo_nombre = (x0 + int(144 * S), int(572 * S), int(408 * S), int(47 * S))
+        self.acceso_historial = (x0, int(640 * S), int(234 * S), int(52 * S))
         self.rect_camara = (w - int(368 * S), h - int(220 * S), int(350 * S), int(202 * S))
         # botones de la pantalla final
         bw, bh, espacio = int(190 * S), int(62 * S), int(13 * S)
@@ -368,8 +372,10 @@ class Juego:
 
     def terminar(self):
         if self.estado == "jugando" or (self.estado == "pausa" and self.estado_antes_pausa == "jugando"):
-            self.historial.agregar(Puntuacion(datetime.now().strftime("%d/%m/%y %H:%M"), self.modo.capitalize(),
-                                              self.velocidad, self.puntos, self.aciertos))
+            self.historial.agregar(Puntuacion(
+                fecha=datetime.now().strftime("%d/%m/%y %H:%M"), categoria=self.modo.capitalize(),
+                velocidad=self.velocidad, puntos=self.puntos, aciertos=self.aciertos, nombre=self.nombre or SIN_NOMBRE,
+            ))
         self.estado = "fin"
         self.dwell_ui = {}
         if self.sostenido:
@@ -453,10 +459,40 @@ class Juego:
         self.bloqueo_controles = True
 
     def clic(self, x, y):
+        if self.estado == "menu":
+            if self.dentro((x, y), self.campo_nombre):
+                if self.borrador_nombre is None:
+                    self.borrador_nombre = self.nombre
+                    self.dwell_ui = {}
+                return
+            self.confirmar_nombre()
         for clave, rect in self.botones_visibles().items():
             if self.dentro((x, y), rect):
                 self.activar_boton(clave)
                 return
+
+    def confirmar_nombre(self):
+        if self.borrador_nombre is not None:
+            self.nombre = " ".join(self.borrador_nombre.split())
+            self.borrador_nombre = None
+
+    def escribir_nombre(self, tecla):
+        """Mientras se edita el nombre, las letras no activan atajos del juego."""
+        if self.borrador_nombre is None:
+            return False
+        if tecla in (10, 13):
+            self.confirmar_nombre()
+        elif tecla == 27:
+            self.borrador_nombre = None
+        elif tecla in (8, 127):
+            self.borrador_nombre = self.borrador_nombre[:-1]
+        elif 32 <= tecla <= 0x24F and len(self.borrador_nombre) < MAX_NOMBRE:
+            # Los backends nativos devuelven códigos distintos para teclas especiales.
+            # Esta franja cubre letras latinas y evita interpretar flechas como texto.
+            caracter = chr(tecla)
+            if caracter.isalnum() or caracter in " -'":
+                self.borrador_nombre += caracter
+        return True
 
     def sobre_controles(self, posicion):
         return any(self.dentro(posicion, rect) for rect in self.controles.values())
@@ -495,6 +531,8 @@ class Juego:
                 nuevas_pinzas.append(c)
                 self.pinzas_listas.discard(c.identidad)
 
+        if self.borrador_nombre is not None:
+            return
         botones = self.botones_visibles()
         if self.bloqueo_controles:
             self.bloqueo_controles = any(self.dentro(c.posicion, rect) for c in cursores for rect in botones.values())
@@ -768,14 +806,30 @@ class Juego:
             G.pegar(img, G.sprite_tarjeta(modo, w, h, self.dwell_ui.get(modo, 0) > 0), x, y)
             self.dibujar_progreso(img, modo, rect)
         x0 = self.acceso_historial[0]
-        for nombre, y in (("Velocidad", 471), ("Vista", 533)):
+        for nombre, y in (("Velocidad", 471), ("Vista", 533), ("Nombre", 595)):
             G.pegar_izq(img, G.sprite_texto(nombre, int(24 * S), borde=2), x0, int(y * S))
         for opcion, rect in self.ajustes.items():
             activo = opcion in (self.velocidad, self.vista)
             self.dibujar_boton(img, opcion, rect, opcion, (14, 112, 119) if activo else (38, 62, 105), activo)
+        self.dibujar_campo_nombre(img)
         self.dibujar_boton(img, "historial", self.acceso_historial, "Ver historial")
-        ayuda = G.sprite_texto("Elige con el dedo o haz clic", int(20 * S), borde=2)
-        G.pegar_izq(img, ayuda, x0 + int(260 * S), int(610 * S))
+        ayuda = "Enter guarda / Esc cancela" if self.borrador_nombre is not None else "Elige un juego con el dedo o haz clic"
+        G.pegar_izq(img, G.sprite_texto(ayuda, int(20 * S), borde=2), x0 + int(260 * S), int(666 * S))
+
+    def dibujar_campo_nombre(self, img):
+        x, y, w, h = self.campo_nombre
+        S = self.S
+        activo = self.borrador_nombre is not None
+        borde = (158, 238, 243) if activo else (180, 198, 226)
+        G.pegar(img, G.sprite_panel(w, h, (22, 37, 64), 255, int(12 * S), borde, max(1, int(2 * S))), x, y)
+        tam = int(22 * S)
+        nombre = self.borrador_nombre if activo else self.nombre
+        texto = G.texto_recortado(nombre, tam, w - int(40 * S))
+        if activo:
+            texto += "|"
+        color = (255, 255, 255) if texto else (181, 204, 229)
+        etiqueta = G.sprite_texto(texto or "Haz clic para escribir tu nombre", tam, color, sombra=False)
+        G.pegar_izq(img, etiqueta, x + int(10 * S), y + h // 2)
 
     def dibujar_cuenta(self, img, ahora):
         transcurrido = ahora - self.t_cuenta
@@ -810,14 +864,14 @@ class Juego:
     def dibujar_historial(self, img):
         S = self.S
         cx, cy = self.w // 2, self.h // 2
-        ancho, alto = int(920 * S), int(600 * S)
+        ancho, alto = int(1080 * S), int(600 * S)
         x0, y0 = cx - ancho // 2, cy - alto // 2
         panel = G.sprite_panel(ancho, alto, (21, 32, 55), 255, int(24 * S), (176, 202, 235), 3)
         G.pegar(img, panel, x0, y0)
         G.pegar_centro(img, G.sprite_texto("Historial de puntuaciones", int(40 * S)), cx, y0 + int(58 * S))
         if self.historial.partidas:
-            columnas = (47, 290, 470, 645, 766)
-            encabezados = ("Fecha y hora", "Categoría", "Velocidad", "Puntos", "Aciertos")
+            columnas = (47, 345, 554, 697, 841, 942)
+            encabezados = ("Nombre", "Fecha y hora", "Categoría", "Velocidad", "Puntos", "Aciertos")
             inicio = len(self.historial.partidas) - self.pagina_historial * FILAS_HISTORIAL
             filas = reversed(self.historial.partidas[max(0, inicio - FILAS_HISTORIAL):inicio])
             for x, texto in zip(columnas, encabezados):
@@ -828,7 +882,8 @@ class Juego:
                 fondo = (35, 51, 81) if i % 2 == 0 else (28, 43, 71)
                 G.pegar(img, G.sprite_panel(ancho - int(66 * S), int(39 * S), fondo, 255, int(6 * S)),
                         x0 + int(33 * S), y)
-                campos = (fila.fecha, fila.categoria, fila.velocidad, str(fila.puntos), str(fila.aciertos))
+                nombre = G.texto_recortado(fila.nombre, int(21 * S), int(276 * S))
+                campos = (nombre, fila.fecha, fila.categoria, fila.velocidad, str(fila.puntos), str(fila.aciertos))
                 for x, texto in zip(columnas, campos):
                     G.pegar_izq(img, G.sprite_texto(texto, int(21 * S)), x0 + int(x * S), y + int(20 * S))
         else:
@@ -940,7 +995,10 @@ def main():
         juego.dibujar(lienzo, cursores, manos, t, dt, mostrar_manos, imagen_camara=frame if usar_fondo else None)
         cv2.imshow(VENTANA, lienzo)
 
-        tecla = cv2.waitKey(1) & 0xFF
+        tecla = cv2.waitKeyEx(1)
+        if juego.escribir_nombre(tecla):
+            continue
+        tecla &= 0xFF
         if tecla in (ord("q"), 27):
             break
         elif tecla in (ord("p"), ord(" ")) and juego.estado in ("jugando", "cuenta", "pausa"):

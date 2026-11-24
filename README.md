@@ -73,7 +73,8 @@ El juego tiene menú (se elige con el dedo), cuenta regresiva, temporizador, rac
 - **Colores:** rojo, azul y amarillo. **Formas:** círculo, cuadrado y triángulo. **Letras:** A, B y C. Por defecto, cada partida empieza con un globo de cada opción de la categoría.
 - **Velocidad:** Lenta, Normal o Rápida. Solo cambia qué tan rápido flotan los globos. El tiempo de la partida se mantiene.
 - **Vista Cámara:** el video ocupa la pantalla. **Vista Fondo:** el juego usa un fondo limpio y muestra la imagen de la cámara a color en un recuadro con borde marcado. El seguimiento de la mano funciona en las dos vistas.
-- **Ver puntuaciones:** abre el historial desde el menú. También aparece en la pantalla final. Cuando se agota el tiempo o se pulsa **Terminar** tras empezar, el juego guarda fecha, categoría, velocidad, puntos y aciertos en `historial_puntuaciones.jsonl`, en la carpeta del proyecto. Si cambias de carpeta, puedes copiar ese archivo para conservar tus resultados.
+- **Nombre:** haz clic en el campo del menú, escribe un nombre o apodo y pulsa **Enter**. Puedes cambiarlo allí antes de cada partida. Si lo dejas vacío, el resultado dice **Sin nombre**.
+- **Ver historial:** consulta las puntuaciones desde el menú o la pantalla final. El juego guarda nombre, fecha, categoría, velocidad, puntos y aciertos en `historial_puntuaciones.jsonl` al agotarse el tiempo o al pulsar **Terminar** tras empezar. Las partidas guardadas con versiones anteriores aparecen como **Sin nombre**. Si descargas otra versión en una carpeta nueva, puedes copiarle ese archivo para conservar el historial.
 
 ---
 

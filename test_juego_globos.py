@@ -1,5 +1,6 @@
 """Pruebas de gestos y estados sin abrir la cámara ni una ventana."""
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace as Datos
 import sys
@@ -272,6 +273,51 @@ class OpcionesJuegoTests(unittest.TestCase):
             registro = globos.Puntuacion("24/11/26 12:00", "Colores", "Normal", 15, 1)
             historial.agregar(registro)
             self.assertEqual(globos.Historial(archivo).partidas, [registro])
+
+    def test_el_nombre_se_edita_en_menu_y_se_guarda_por_partida(self):
+        with TemporaryDirectory() as carpeta:
+            archivo = Path(carpeta) / "partidas.jsonl"
+            juego = globos.Juego(1280, 720, 90, 3, lambda _: None, archivo)
+            x, y, w, h = juego.campo_nombre
+            juego.clic(x + w // 2, y + h // 2)
+            for letra in "  Joaquín   Pérezx ":
+                self.assertTrue(juego.escribir_nombre(ord(letra)))
+            juego.escribir_nombre(8)
+            juego.escribir_nombre(8)
+            juego.escribir_nombre(13)
+            self.assertEqual(juego.nombre, "Joaquín Pérez")
+            self.assertFalse(juego.escribir_nombre(ord("q")))
+            self.clic(juego, "COLORES")
+            juego.empezar()
+            juego.puntos = 20
+            juego.terminar()
+
+            juego.ir_menu()
+            juego.clic(x + w // 2, y + h // 2)
+            juego.escribir_nombre(ord("X"))
+            juego.escribir_nombre(27)
+            self.assertEqual(juego.nombre, "Joaquín Pérez")
+            juego.clic(x + w // 2, y + h // 2)
+            for _ in juego.nombre:
+                juego.escribir_nombre(8)
+            for letra in "Luz":
+                juego.escribir_nombre(ord(letra))
+            self.clic(juego, "LETRAS")   # Elegir categoría también confirma el campo.
+            juego.empezar()
+            juego.puntos = 10
+            juego.terminar()
+
+            filas = globos.Historial(archivo).partidas
+            self.assertEqual([(f.nombre, f.puntos) for f in filas], [("Joaquín Pérez", 20), ("Luz", 10)])
+
+    def test_historial_conserva_puntajes_anteriores_a_los_nombres(self):
+        with TemporaryDirectory() as carpeta:
+            archivo = Path(carpeta) / "partidas.jsonl"
+            fila = {"fecha": "24/11/26 12:00", "categoria": "Colores", "velocidad": "Normal",
+                    "puntos": 30, "aciertos": 2}
+            archivo.write_text(json.dumps(fila) + "\n", encoding="utf-8")
+            historial = globos.Historial(archivo)
+            self.assertEqual([(f.nombre, f.puntos) for f in historial.partidas], [("Sin nombre", 30)])
 
 
 if __name__ == "__main__":
