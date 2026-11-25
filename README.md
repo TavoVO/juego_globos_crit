@@ -72,7 +72,7 @@ El juego tiene menú (se elige con el dedo), cuenta regresiva, temporizador, rac
 
 - **Colores:** rojo, azul y amarillo. **Formas:** círculo, cuadrado y triángulo. **Letras:** A, B y C. Por defecto, cada partida empieza con un globo de cada opción de la categoría.
 - **Velocidad:** Lenta, Normal o Rápida. Solo cambia qué tan rápido flotan los globos. El tiempo de la partida se mantiene.
-- **Vista Cámara:** el video ocupa la pantalla. **Vista Fondo:** el juego usa un fondo limpio y muestra la imagen de la cámara a color en un recuadro con borde marcado. El seguimiento de la mano funciona en las dos vistas.
+- **Vista Cámara:** el video ocupa la pantalla. **Vista Fondo:** el juego se ve en un parque ilustrado, con la cámara a color en un recuadro con borde marcado. El seguimiento de la mano funciona en las dos vistas.
 - **Nombre:** haz clic en el campo del menú, escribe un nombre o apodo y pulsa **Enter**. Puedes cambiarlo allí antes de cada partida. Si lo dejas vacío, el resultado dice **Sin nombre**.
 - **Ver historial:** consulta las puntuaciones desde el menú o la pantalla final. El juego guarda nombre, fecha, categoría, velocidad, puntos y aciertos en `historial_puntuaciones.jsonl` al agotarse el tiempo o al pulsar **Terminar** tras empezar. Las partidas guardadas con versiones anteriores aparecen como **Sin nombre**. Si descargas otra versión en una carpeta nueva, puedes copiarle ese archivo para conservar el historial.
 
@@ -148,3 +148,9 @@ Ideas clave que se repiten: **retroalimentación inmediata**, **dificultad ajust
 - *Piernas:* `03_piernas.py` (marcha con indicación DERECHA/IZQUIERDA) se puede convertir en un nivel donde se "patea" o se sube la rodilla para reventar globos.
 
 **Lo que registra el juego:** puntos, globos correctos, precisión. **Siguientes pasos:** guardar cada sesión en un CSV (fecha, paciente, aciertos, tiempo de reacción) para que el terapeuta vea la evolución; agregar sonido y voz para pacientes que aún no leen; un nivel de números (contar globos) y uno de secuencias (primero rojo, luego azul).
+
+## Ilustración del parque
+
+El [fondo del parque](recursos/parque.jpg) se generó con ImageGen integrado. Este fue el prompt utilizado.
+
+> Ilustración panorámica 16:9 para el fondo del juego infantil Atrapa Globos. Un parque de barrio en una mañana soleada, con césped abierto, un camino suave de grava clara, cielo azul verdoso, árboles redondos en los extremos y una banca discreta a la derecha. Estilo de cuento infantil 2D con formas redondeadas, colores naturales suaves y sombreado sutil, alegre y tranquilo. Mantén el centro y la mitad izquierda amplios y despejados, con el horizonte y los detalles cerca del tercio inferior, para que los globos, las letras y el menú se distingan. Composición de fondo a pantalla completa y sin recuadros. Sin personas, globos, texto, botones, logotipos ni marcas de agua.

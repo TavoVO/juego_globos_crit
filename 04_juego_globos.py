@@ -59,6 +59,7 @@ CAMPO = {"COLORES": "color", "FORMAS": "forma", "LETRAS": "letra"}
 OPCIONES = {"COLORES": tuple(COLORES), "FORMAS": G.FORMAS_GLOBO, "LETRAS": G.LETRAS_GLOBO}
 VELOCIDADES = {"Lenta": 0.6, "Normal": 1.0, "Rápida": 1.6}
 VISTAS = ("Cámara", "Fondo")
+FONDO_PARQUE = Path(__file__).resolve().parent / "recursos" / "parque.jpg"
 FILAS_HISTORIAL = 7
 MAX_NOMBRE = 30
 
@@ -908,12 +909,26 @@ def crear_vineta(w, h):
 
 
 def crear_fondo(w, h):
-    """Fondo oscuro con un degradado suave para realzar globos y botones."""
+    """Carga el parque a pantalla completa y suaviza el contraste del fondo."""
     horizontal = np.linspace(0, 1, w, dtype=np.float32)[None, :]
     vertical = np.linspace(0, 1, h, dtype=np.float32)[:, None]
     mezcla = 0.7 * vertical + 0.3 * horizontal
     arriba, abajo = np.array([70, 44, 28]), np.array([101, 57, 42])  # BGR
-    return (arriba + mezcla[..., None] * (abajo - arriba)).astype(np.uint8)
+    base = (arriba + mezcla[..., None] * (abajo - arriba)).astype(np.uint8)
+    try:
+        datos = np.frombuffer(FONDO_PARQUE.read_bytes(), dtype=np.uint8)
+        parque = cv2.imdecode(datos, cv2.IMREAD_COLOR)
+    except (OSError, cv2.error):
+        return base
+    if parque is None:
+        return base
+
+    alto, ancho = parque.shape[:2]
+    escala = max(w / ancho, h / alto)
+    tamanio = (math.ceil(ancho * escala), math.ceil(alto * escala))
+    parque = cv2.resize(parque, tamanio, interpolation=cv2.INTER_AREA if escala < 1 else cv2.INTER_LINEAR)
+    x, y = (tamanio[0] - w) // 2, (tamanio[1] - h) // 2
+    return cv2.addWeighted(parque[y:y + h, x:x + w], 0.80, base, 0.20, 0)
 
 
 def main():
