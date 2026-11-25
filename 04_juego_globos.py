@@ -52,6 +52,11 @@ from puntuaciones import Historial, Puntuacion, SIN_NOMBRE
 
 VENTANA = "Atrapa Globos - CRIT"
 ANCHO_LIENZO = 1280
+LADO_MAX_DETECCION = 1280
+UMBRAL_CERRAR_PINZA = 0.39
+UMBRAL_ABRIR_PINZA = 0.55
+MEMORIA_MANO_ABIERTA = 0.18  # segundos para tolerar un fotograma perdido al cerrar
+TIEMPO_ABRIR_PARA_SOLTAR = 0.07
 
 COLORES = G.COLORES_GLOBO
 MODOS = {1: "COLORES", 2: "FORMAS", 3: "LETRAS"}
@@ -126,7 +131,7 @@ class Globo:
 
     def contiene(self, p):
         cx, cy = self.centro()
-        return math.hypot(p[0] - cx, p[1] - cy) < self.r * 1.25
+        return math.hypot(p[0] - cx, p[1] - cy) < self.r * 1.35
 
     def visible(self):
         return -self.r < self.y < self.alto - self.r * 0.5
@@ -217,6 +222,8 @@ class Cursor:
     posicion: tuple
     identidad: str
     pinza: bool
+    indice: tuple | None = None
+    mano_detectada: bool = True
 
 
 def leer_cursores(res, w, h, control, pinzas_previas, res_manos=None):
@@ -226,33 +233,42 @@ def leer_cursores(res, w, h, control, pinzas_previas, res_manos=None):
     estados = {}
     if resultado_manos is not None:
         for i, mano in enumerate(resultado_manos.hand_landmarks):
-            pts = [(int(p.x * w), int(p.y * h)) for p in mano]
+            coordenadas = [(p.x * w, p.y * h) for p in mano]
+            pts = [(round(x), round(y)) for x, y in coordenadas]
             manos.append(pts)
             etiquetas = resultado_manos.handedness[i]
             identidad = etiquetas[0].category_name if etiquetas else f"mano-{i}"
             if identidad in estados:
                 identidad = f"{identidad}-{i}"
-            palma = max(math.dist(pts[0], pts[9]), math.dist(pts[5], pts[17]), 1)
-            umbral = 0.48 if pinzas_previas.get(identidad, False) else 0.32
-            pinza = math.dist(pts[4], pts[8]) / palma < umbral
+            palma = max(math.dist(coordenadas[0], coordenadas[9]), math.dist(coordenadas[5], coordenadas[17]), 1)
+            umbral = UMBRAL_ABRIR_PINZA if pinzas_previas.get(identidad, False) else UMBRAL_CERRAR_PINZA
+            pinza = math.dist(coordenadas[4], coordenadas[8]) / palma < umbral
             estados[identidad] = pinza
             # El punto de pinza queda entre las dos yemas.
             posicion = tuple((a + b) // 2 for a, b in zip(pts[4], pts[8])) if pinza else pts[8]
-            cursores.append(Cursor(posicion, identidad, pinza))
+            cursores.append(Cursor(posicion, identidad, pinza, indice=pts[8]))
     pinzas_previas.clear()
     pinzas_previas.update(estados)
     if control == "cuerpo":
-        manos_cursores, cursores = cursores, []
+        munecas = []
         for cuerpo in res.pose_landmarks:
             for idx in (15, 16):
                 p = cuerpo[idx]
                 vis = p.visibility if p.visibility is not None else 1.0
                 if vis > 0.5:
-                    posicion = (int(p.x * w), int(p.y * h))
-                    cercanas = [(math.dist(pts[0], posicion), c) for pts, c in zip(manos, manos_cursores)]
-                    distancia, mano = min(cercanas, key=lambda par: par[0]) if cercanas else (math.inf, None)
-                    cerrada = distancia < math.hypot(w, h) * 0.15 and mano.pinza
-                    cursores.append(Cursor(posicion, f"muneca-{idx}", cerrada))
+                    munecas.append((idx, (int(p.x * w), int(p.y * h))))
+        # Una detección de mano puede activar una sola muñeca.
+        parejas = sorted((math.dist(posicion, pts[0]), idx, mano) for idx, posicion in munecas
+                         for mano, pts in enumerate(manos))
+        asignadas, usadas = {}, set()
+        alcance = 0.15 * math.hypot(w, h)
+        for distancia, idx, mano in parejas:
+            if distancia < alcance and idx not in asignadas and mano not in usadas:
+                asignadas[idx] = cursores[mano]
+                usadas.add(mano)
+        cursores = [Cursor(posicion, f"muneca-{idx}", asignadas[idx].pinza, indice=asignadas[idx].indice)
+                    if idx in asignadas else Cursor(posicion, f"muneca-{idx}", False, mano_detectada=False)
+                    for idx, posicion in munecas]
     return cursores, manos
 
 
@@ -330,7 +346,7 @@ class Juego:
             "pausa": (int(18 * S), h - int(64 * S), int(220 * S), int(48 * S)),
             "terminar": (int(252 * S), h - int(64 * S), int(220 * S), int(48 * S)),
         }
-        self.pinzas_listas = set()
+        self.pinzas_listas = {}
         self.bloqueo_controles = False
         self.t_animacion = 0.0
         self.dwell_ui = {}
@@ -354,6 +370,7 @@ class Juego:
         self.sostenido = None
         self.dueno_globo = None
         self.perdido = 0.0
+        self.t_abierta = 0.0
         self.mensaje = None
         self.destello_hasta = 0.0
         self.dwell_ui = {}
@@ -379,10 +396,7 @@ class Juego:
             ))
         self.estado = "fin"
         self.dwell_ui = {}
-        if self.sostenido:
-            self.sostenido.agarrado = False
-            self.sostenido = None
-        self.dueno_globo = None
+        self.soltar()
         self.sonido("fin")
 
     def alternar_pausa(self):
@@ -522,15 +536,16 @@ class Juego:
 
     def actualizar(self, cursores, dt, t):
         ahora = time.monotonic()
-        presentes = {c.identidad for c in cursores}
-        self.pinzas_listas.intersection_update(presentes)
+        self.pinzas_listas = {mano: visto for mano, visto in self.pinzas_listas.items()
+                              if ahora - visto <= MEMORIA_MANO_ABIERTA}
         nuevas_pinzas = []
         for c in cursores:
+            if not c.mano_detectada:
+                continue
             if not c.pinza:
-                self.pinzas_listas.add(c.identidad)
-            elif c.identidad in self.pinzas_listas:
+                self.pinzas_listas[c.identidad] = ahora
+            elif self.pinzas_listas.pop(c.identidad, None) is not None:
                 nuevas_pinzas.append(c)
-                self.pinzas_listas.discard(c.identidad)
 
         if self.borrador_nombre is not None:
             return
@@ -563,36 +578,52 @@ class Juego:
         if self.tiempo_restante() <= 0:
             self.terminar()
             return
+        # Probar la pinza antes de mover lo que se veía en el cuadro anterior.
+        if self.sostenido is None:
+            self.agarrar_globo(nuevas_pinzas)
+        else:
+            self.mover_globo(cursores, dt, ahora)
         for g in self.globos:
             g.actualizar(dt, t, VELOCIDADES[self.velocidad])
 
-        if self.sostenido is None:
-            for c in nuevas_pinzas:
-                if self.sobre_controles(c.posicion):
+    def agarrar_globo(self, nuevas_pinzas):
+        for cursor in nuevas_pinzas:
+            if self.sobre_controles(cursor.posicion):
+                continue
+            for punto in (cursor.posicion, cursor.indice):
+                if punto is None or self.sobre_controles(punto):
                     continue
-                for g in reversed(self.globos):
-                    if g.contiene(c.posicion):
-                        g.agarrado, self.sostenido, self.perdido = True, g, 0.0
-                        self.dueno_globo = c.identidad
-                        self.sonido("agarrar")
-                        return
-            return
+                opciones = [g for g in self.globos if g.contiene(punto)]
+                if opciones:
+                    g = min(opciones, key=lambda globo: math.dist(punto, globo.centro()))
+                    g.x, g.y = g.centro()
+                    g.x_osc = 0.0
+                    self.desfase_agarre = (g.x - cursor.posicion[0], g.y - cursor.posicion[1])
+                    g.agarrado, self.sostenido = True, g
+                    self.dueno_globo = cursor.identidad
+                    self.sonido("agarrar")
+                    return
 
+    def mover_globo(self, cursores, dt, ahora):
         g = self.sostenido
         propietario = next((c for c in cursores if c.identidad == self.dueno_globo), None)
-        if propietario is None:
+        if propietario is None or not propietario.mano_detectada:
             self.perdido += dt
+            self.t_abierta = 0.0
             if self.perdido > 1.0:                  # se perdió la mano: soltar el globo
                 self.soltar()
             return
         self.perdido = 0.0
         if not propietario.pinza:
-            self.soltar()
+            ya_abierta = self.t_abierta > 0.0
+            self.t_abierta += dt
+            if ya_abierta and self.t_abierta >= TIEMPO_ABRIR_PARA_SOLTAR:
+                self.soltar()
             return
+        self.t_abierta = 0.0
         cx, cy = propietario.posicion
-        k = min(1.0, dt * 15)                       # suavizado
-        g.x += (cx - g.x) * k
-        g.y += (cy - g.r * 0.9 - g.y) * k           # el globo queda justo arriba del dedo
+        # Conserva el punto de contacto y sigue el cursor sin suavizado adicional.
+        g.x, g.y = cx + self.desfase_agarre[0], cy + self.desfase_agarre[1]
         if math.hypot(cx - self.zona[0], cy - self.zona[1]) < self.radio_zona + 15 * self.S:
             self.entregar(g, ahora)
 
@@ -602,11 +633,11 @@ class Juego:
         self.sostenido = None
         self.dueno_globo = None
         self.perdido = 0.0
+        self.t_abierta = 0.0
 
     def entregar(self, g, ahora):
-        self.sostenido = None
-        self.dueno_globo = None
         x, y = g.centro()
+        self.soltar()
         if g.atributo(self.modo) == self.objetivo:
             self.racha += 1
             self.mejor_racha = max(self.mejor_racha, self.racha)
@@ -698,7 +729,7 @@ class Juego:
         escala = min(disponible_w / iw, disponible_h / ih)
         vw, vh = max(1, round(iw * escala)), max(1, round(ih * escala))
         vista = cv2.resize(imagen, (vw, vh), interpolation=cv2.INTER_AREA)
-        manos_pequenas = [[(round(px * vw / iw), round(py * vh / ih)) for px, py in mano] for mano in manos]
+        manos_pequenas = [[(round(px * vw / self.w), round(py * vh / self.h)) for px, py in mano] for mano in manos]
         dibujar_manos(vista, manos_pequenas, escala)
         vx, vy = x + (w - vw) // 2, py + (disponible_h - vh) // 2
         img[vy:vy + vh, vx:vx + vw] = vista
@@ -931,6 +962,15 @@ def crear_fondo(w, h):
     return cv2.addWeighted(parque[y:y + h, x:x + w], 0.80, base, 0.20, 0)
 
 
+def imagen_para_detector(frame):
+    """Usa el fotograma original de la cámara sin agrandarlo para MediaPipe."""
+    h, w = frame.shape[:2]
+    if max(w, h) > LADO_MAX_DETECCION:
+        escala = LADO_MAX_DETECCION / max(w, h)
+        frame = cv2.resize(frame, (max(1, round(w * escala)), max(1, round(h * escala))), interpolation=cv2.INTER_LINEAR)
+    return U.a_imagen_mp(frame)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Atrapa globos y llévalos al globero")
     parser.add_argument("--camara", type=int, default=0)
@@ -988,13 +1028,11 @@ def main():
         if not ok:
             break
         frame = cv2.flip(frame, 1)                       # efecto espejo: te ves como en un espejo
-        if frame.shape[:2] != (h, w):
-            frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
         ahora = time.monotonic()
         dt, prev = min(ahora - prev, 0.1), ahora
         t = ahora - t0
 
-        imagen, marca = U.a_imagen_mp(frame), reloj.ms()
+        imagen, marca = imagen_para_detector(frame), reloj.ms()
         res_manos = detector_manos.detect_for_video(imagen, marca)
         if detector_pose is None:
             cursores, manos = leer_cursores(res_manos, w, h, args.control, pinzas_previas)
@@ -1006,7 +1044,11 @@ def main():
         clics.clear()
         juego.actualizar(cursores, dt, t)
         usar_fondo = juego.vista == "Fondo"
-        lienzo = fondo.copy() if usar_fondo else cv2.multiply(frame, vineta, scale=1 / 255)
+        if usar_fondo:
+            lienzo = fondo.copy()
+        else:
+            vista = frame if frame.shape[:2] == (h, w) else cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
+            lienzo = cv2.multiply(vista, vineta, scale=1 / 255)
         juego.dibujar(lienzo, cursores, manos, t, dt, mostrar_manos, imagen_camara=frame if usar_fondo else None)
         cv2.imshow(VENTANA, lienzo)
 

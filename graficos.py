@@ -9,6 +9,7 @@ import functools
 import math
 import os
 
+import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -72,9 +73,9 @@ def pegar(dst, spr, x, y, alpha=1.0):
     if x0 >= x1 or y0 >= y1 or alpha <= 0:
         return
     s = spr[y0 - y:y1 - y, x0 - x:x1 - x]
-    a = s[..., 3:4].astype(np.float32) * (min(alpha, 1.0) / 255.0)
+    a = s[..., 3].astype(np.float32) * (min(alpha, 1.0) / 255.0)
     roi = dst[y0:y1, x0:x1]
-    roi[:] = (s[..., :3] * a + roi * (1.0 - a)).astype(np.uint8)
+    cv2.blendLinear(s[..., :3], roi, a, 1.0 - a, dst=roi)
 
 
 def pegar_centro(dst, spr, cx, cy, alpha=1.0):

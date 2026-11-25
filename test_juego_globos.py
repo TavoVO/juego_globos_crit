@@ -70,6 +70,8 @@ class JuegoTests(unittest.TestCase):
     def test_pinza_agarrar_y_abrir_suelta(self):
         self.agarrar()
         self.tick(self.cursor(False))
+        self.assertIs(self.juego.sostenido, self.g)
+        self.tick(self.cursor(False))
         self.assertIsNone(self.juego.sostenido)
         self.assertFalse(self.g.agarrado)
 
@@ -83,6 +85,43 @@ class JuegoTests(unittest.TestCase):
         self.tick(self.cursor(False, (50, 200)))
         self.tick(self.cursor(True, (50, 200)))
         self.tick(self.cursor(True))
+        self.assertIsNone(self.juego.sostenido)
+
+    def test_agarrar_con_indice_sobre_globo_aunque_el_punto_medio_se_mueva(self):
+        self.tick(self.cursor())
+        self.tick(globos.Cursor((350, 300), "Left", True, indice=self.g.centro()))
+        self.assertIs(self.juego.sostenido, self.g)
+
+    def test_pinza_se_comprueba_sobre_el_globo_antes_de_moverlo(self):
+        self.tick(self.cursor())
+        x, y = self.g.centro()
+        self.g.vy = 90
+        self.tick(self.cursor(True, (x, y + int(self.g.r * 1.30))))
+        self.assertIs(self.juego.sostenido, self.g)
+
+    def test_se_puede_cerrar_tras_perder_un_fotograma_pero_no_una_pausa_larga(self):
+        self.tick(self.cursor(), dt=0.03)
+        self.tick(dt=0.03)
+        self.tick(self.cursor(True), dt=0.03)
+        self.assertIs(self.juego.sostenido, self.g)
+        self.juego.soltar()
+        self.tick(self.cursor(), dt=0.03)
+        self.tick(dt=0.25)
+        self.tick(self.cursor(True), dt=0.03)
+        self.assertIsNone(self.juego.sostenido)
+
+    def test_globo_sigue_el_cursor_y_tolera_una_apertura_falsa(self):
+        self.agarrar()
+        x, y = self.g.centro()
+        self.tick(self.cursor(True, (310, 330)), dt=0.03)
+        self.assertEqual(self.g.centro(), (x + 60, y + 30))
+        self.tick(self.cursor(False, self.juego.zona), dt=0.03)
+        self.assertIs(self.juego.sostenido, self.g)
+        self.assertEqual(self.juego.puntos, 0)
+        self.tick(self.cursor(True, (310, 330)), dt=0.03)
+        self.assertIs(self.juego.sostenido, self.g)
+        self.tick(self.cursor(False, (310, 330)), dt=0.04)
+        self.tick(self.cursor(False, (310, 330)), dt=0.04)
         self.assertIsNone(self.juego.sostenido)
 
     def test_otra_mano_no_roba_globo_y_perder_mano_lo_suelta(self):
@@ -173,7 +212,7 @@ class PinzaTests(unittest.TestCase):
 
     def test_umbral_relativo_histeresis_y_perdida(self):
         estados = {}
-        for distancia, esperado in ((60, False), (25, True), (40, True), (55, False), (40, False)):
+        for distancia, esperado in ((60, False), (37, True), (50, True), (58, False), (40, False)):
             cursores, _ = globos.leer_cursores(self.resultado(distancia), 1000, 1000, "mano", estados)
             self.assertEqual(cursores[0].pinza, esperado)
         cursores, _ = globos.leer_cursores(self.resultado(25, .5), 1000, 1000, "mano", {})
@@ -186,8 +225,14 @@ class PinzaTests(unittest.TestCase):
         res = Datos(pose_landmarks=[cuerpo])
         cursores, _ = globos.leer_cursores(res, 1000, 1000, "cuerpo", {})
         self.assertFalse(any(c.pinza for c in cursores))
+        self.assertFalse(any(c.mano_detectada for c in cursores))
         cursores, _ = globos.leer_cursores(res, 1000, 1000, "cuerpo", {}, self.resultado(25))
-        self.assertTrue(all(c.pinza for c in cursores))
+        self.assertEqual(sum(c.pinza for c in cursores), 1)
+
+    def test_detector_no_agranda_la_imagen_de_la_camara(self):
+        for h, w, alto_esperado, ancho_esperado in ((480, 640, 480, 640), (1080, 1920, 720, 1280)):
+            imagen = globos.imagen_para_detector(np.zeros((h, w, 3), np.uint8))
+            self.assertEqual((imagen.height, imagen.width), (alto_esperado, ancho_esperado))
 
 
 class OpcionesJuegoTests(unittest.TestCase):

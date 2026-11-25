@@ -2,7 +2,7 @@
 
 Proyecto con **OpenCV** (cámara e imágenes) y **MediaPipe** (detección de manos y cuerpo) que avanza por pasos hasta llegar a un juego de rehabilitación: atrapar globos y llevárselos al globero.
 
-**[Guía para presentar el proyecto (PDF)](output/pdf/guia-atrapa-globos.pdf)**. Explica por qué se eligió MediaPipe, cómo se reconoce la pinza y cómo mostrar las cuatro demos en clase desde Windows. Los números de línea de sus ejemplos corresponden a la versión anterior del juego. Las opciones actuales se describen abajo.
+**[Guía para presentar el proyecto (PDF)](output/pdf/guia-atrapa-globos.pdf)**. Explica por qué se eligió MediaPipe, cómo se reconoce la pinza y cómo mostrar las cuatro demos en clase desde Windows. Los números de línea y los umbrales de sus ejemplos corresponden a una versión anterior del juego. Las opciones actuales se describen abajo.
 
 | Archivo | Qué hace |
 |---|---|
@@ -63,6 +63,8 @@ python 04_juego_globos.py --sin-sonido
 Teclas del juego: **1/2/3** jugar Colores/Formas/Letras · **ESPACIO** empezar · **P/ESPACIO** pausar o continuar durante la partida · **T** terminar y ver resultados · **M** menú · **R** reiniciar · **F** pantalla completa · **H** mostrar/ocultar el contorno de la mano · **Q/ESC** cerrar el juego.
 
 **Agarrar y soltar:** abre el pulgar y el índice, coloca el índice sobre un globo y junta las dos yemas. Mantén la pinza cerrada para transportarlo al globero; abre los dedos para soltarlo. Solo se sostiene un globo a la vez, con la misma mano que lo agarró. Cada agarre requiere abrir y cerrar los dedos de nuevo; dejar el dedo encima ya no atrapa globos. El cursor se pone verde al detectar la pinza. La opción antigua `--dwell` se acepta por compatibilidad, pero ya no modifica el agarre.
+
+El juego detecta el cierre cuando la distancia entre las yemas es menor al 39 % del tamaño estimado de la palma. Al llegar al 55 % se considera abierta. Si los dedos se abren en un solo fotograma mientras llevas el globo, el juego espera a confirmar la apertura antes de soltarlo. Para agarrar, comprueba el cursor y la punta del índice.
 
 Durante la partida y la cuenta regresiva aparecen los botones **Pausar/Continuar** y **Terminar**. Puedes hacer clic con el ratón o mantener el cursor de la mano sobre ellos durante 1.2 segundos. La pausa congela el tiempo, los globos y los efectos; **Terminar** muestra los resultados obtenidos hasta ese momento, incluso si estás en pausa.
 
