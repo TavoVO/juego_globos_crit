@@ -44,7 +44,7 @@ En la terminal **PowerShell** de VS Code, desde la carpeta del proyecto y con la
 | OpenCV abre la cámara y pone texto sobre el video. | `.\.venv\Scripts\python.exe .\01_camara_texto.py` |
 | MediaPipe sigue el índice para dibujar en el aire. | `.\.venv\Scripts\python.exe .\02_dedo_mano.py` |
 | MediaPipe Pose sigue las piernas. Levanta la rodilla que pida el programa para ver el contador. | `.\.venv\Scripts\python.exe .\03_piernas.py` |
-| Propuesta para el CRIT. Pose sigue las muñecas y MediaPipe Hands reconoce la pinza. Pulsa **1**, **2** o **3** para elegir colores, formas o letras. | `.\.venv\Scripts\python.exe .\04_juego_globos.py --control cuerpo` |
+| Propuesta para el CRIT. Pose sigue las muñecas y MediaPipe Hands reconoce la pinza. Elige colores, formas o letras y luego cuántas opciones quieres usar. | `.\.venv\Scripts\python.exe .\04_juego_globos.py --control cuerpo` |
 
 Para explicar el código del juego, abre [`04_juego_globos.py`](04_juego_globos.py). Ahí se importan `cv2` y `mediapipe as mp`, y se crean los detectores `mp.tasks.vision.HandLandmarker` y, en modo cuerpo, `mp.tasks.vision.PoseLandmarker`.
 
@@ -60,7 +60,7 @@ python 04_juego_globos.py --tiempo 60 --globos 4
 python 04_juego_globos.py --sin-sonido
 ```
 
-Teclas del juego: **1/2/3** jugar Colores/Formas/Letras · **ESPACIO** empezar · **P/ESPACIO** pausar o continuar durante la partida · **T** terminar y ver resultados · **M** menú · **R** reiniciar · **F** pantalla completa · **H** mostrar/ocultar el contorno de la mano · **Q/ESC** cerrar el juego.
+Teclas del juego: **1/2/3** elige primero la categoría y después la cantidad · **P/ESPACIO** pausa o continúa durante la partida · **T** termina y muestra resultados · **M** menú · **R** reinicia con la misma configuración · **F** pantalla completa · **H** muestra u oculta el contorno de la mano · **Esc** regresa al menú desde el selector de cantidad · **Q** cierra el juego.
 
 **Agarrar y soltar:** abre el pulgar y el índice, coloca el índice sobre un globo y junta las dos yemas. Mantén la pinza cerrada para transportarlo al globero; abre los dedos para soltarlo. Solo se sostiene un globo a la vez, con la misma mano que lo agarró. Cada agarre requiere abrir y cerrar los dedos de nuevo; dejar el dedo encima ya no atrapa globos. El cursor se pone verde al detectar la pinza. La opción antigua `--dwell` se acepta por compatibilidad, pero ya no modifica el agarre.
 
@@ -72,7 +72,8 @@ El juego tiene menú (se elige con el dedo), cuenta regresiva, temporizador, rac
 
 **Opciones del menú**
 
-- **Colores:** rojo, azul y amarillo. **Formas:** círculo, cuadrado y triángulo. **Letras:** A, B y C. Por defecto, cada partida empieza con un globo de cada opción de la categoría.
+- Elige **Colores**, **Formas** o **Letras** y enseguida selecciona **1, 2 o 3**. Cada tarjeta muestra qué opciones incluye. Por ejemplo, **2 letras** usa **A y B**, y **3 letras** añade la **C**. Puedes elegir con el dedo, con el ratón o con las teclas **1/2/3**. Al seleccionar la cantidad empieza la cuenta regresiva.
+- El juego muestra un globo por opción elegida. Si usas `--globos`, el número indicado fija el total en pantalla y, si hace falta, repite opciones. **Jugar otra vez** conserva la categoría y la cantidad. Para cambiarlas, vuelve al menú.
 - **Velocidad:** Lenta, Normal o Rápida. Solo cambia qué tan rápido flotan los globos. El tiempo de la partida se mantiene.
 - **Vista Cámara:** el video ocupa la pantalla. **Vista Fondo:** el juego se ve en un parque ilustrado, con la cámara a color en un recuadro con borde marcado. El seguimiento de la mano funciona en las dos vistas.
 - **Nombre:** haz clic en el campo del menú, escribe un nombre o apodo y pulsa **Enter**. Puedes cambiarlo allí antes de cada partida. Si lo dejas vacío, el resultado dice **Sin nombre**.

@@ -248,10 +248,54 @@ class OpcionesJuegoTests(unittest.TestCase):
         for categoria, esperados in categorias.items():
             juego.ir_menu()
             self.clic(juego, categoria)
+            self.clic(juego, 3)
             self.assertTrue(all(g.visible() for g in juego.globos))
             for g in juego.globos:
                 g.reiniciar()
             self.assertEqual({g.atributo(categoria) for g in juego.globos}, esperados)
+
+    def test_categoria_espera_la_cantidad_y_solo_aparecen_las_opciones_elegidas(self):
+        juego = globos.Juego(1280, 720, 90, None, lambda _: None)
+        for categoria, valores in globos.OPCIONES.items():
+            for cantidad in (1, 2, 3):
+                with self.subTest(categoria=categoria, cantidad=cantidad):
+                    juego.ir_menu()
+                    self.clic(juego, categoria)
+                    self.assertEqual(juego.estado, "cantidad")
+                    self.assertEqual(juego.modo_elegido, categoria)
+                    self.clic(juego, cantidad)
+                    self.assertEqual(juego.estado, "cuenta")
+                    self.assertEqual(len(juego.globos), cantidad)
+                    esperados = set(valores[:cantidad])
+                    for g in juego.globos:
+                        g.reiniciar()
+                    self.assertEqual({g.atributo(categoria) for g in juego.globos}, esperados)
+                    for _ in range(4):
+                        juego.nuevo_objetivo()
+                        self.assertIn(juego.objetivo, esperados)
+
+    def test_repetir_conserva_cantidad_y_volver_permite_cambiar_categoria(self):
+        juego = globos.Juego(1280, 720, 90, None, lambda _: None)
+        self.clic(juego, "LETRAS")
+        self.clic(juego, "menu")
+        self.assertEqual(juego.estado, "menu")
+        self.clic(juego, "FORMAS")
+        self.clic(juego, 2)
+        juego.empezar()
+        juego.terminar()
+        self.clic(juego, "otra")
+        self.assertEqual((juego.estado, juego.modo, juego.cantidad), ("cuenta", "FORMAS", 2))
+        self.assertEqual({g.forma for g in juego.globos}, {"CIRCULO", "CUADRADO"})
+
+    def test_total_explicito_mantiene_la_cantidad_de_globos(self):
+        juego = globos.Juego(1280, 720, 90, 4, lambda _: None)
+        self.clic(juego, "LETRAS")
+        self.clic(juego, 2)
+        self.assertEqual(len(juego.globos), 4)
+        self.assertEqual({g.letra for g in juego.globos}, {"A", "B"})
+        limitado = globos.Juego(1280, 720, 90, 1, lambda _: None)
+        self.clic(limitado, "COLORES")
+        self.assertEqual(set(limitado.botones_visibles()), {1, "menu"})
 
     def test_velocidad_cambia_desplazamiento_sin_cambiar_temporizador(self):
         juego = globos.Juego(1280, 720, 90, 3, lambda _: None)
@@ -294,6 +338,7 @@ class OpcionesJuegoTests(unittest.TestCase):
                 juego.ir_menu()
                 self.clic(juego, "Rápida")
                 self.clic(juego, "FORMAS")
+                self.clic(juego, 3)
                 juego.empezar()
                 juego.puntos, juego.aciertos = i * 10, i
                 juego.alternar_pausa()
@@ -333,6 +378,7 @@ class OpcionesJuegoTests(unittest.TestCase):
             self.assertEqual(juego.nombre, "Joaquín Pérez")
             self.assertFalse(juego.escribir_nombre(ord("q")))
             self.clic(juego, "COLORES")
+            self.clic(juego, 3)
             juego.empezar()
             juego.puntos = 20
             juego.terminar()
@@ -348,6 +394,7 @@ class OpcionesJuegoTests(unittest.TestCase):
             for letra in "Luz":
                 juego.escribir_nombre(ord(letra))
             self.clic(juego, "LETRAS")   # Elegir categoría también confirma el campo.
+            self.clic(juego, 3)
             juego.empezar()
             juego.puntos = 10
             juego.terminar()

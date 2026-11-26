@@ -4,7 +4,8 @@ PASO 4 - JUEGO: Atrapa globos y llévalos a la mano del globero.
 Cómo se juega
 -------------
 1. En el menú, pon el dedo sobre una tarjeta (Colores, Formas o Letras)
-   hasta que se llene la barra. Empieza una cuenta regresiva 3, 2, 1.
+   hasta que se llene la barra. Elige cuántas opciones quieres usar para iniciar
+   la cuenta regresiva 3, 2, 1.
 2. Abre el pulgar y el índice, apunta a un globo y júntalos para atraparlo.
 3. Mantén la pinza cerrada y llévalo al globero. Abre los dedos para soltarlo.
 4. El globero pide un globo en su burbuja. Si entregas el correcto ganas
@@ -15,8 +16,8 @@ En el menú puedes elegir la velocidad y ver la cámara como fondo o en un
 recuadro. El historial guarda las partidas terminadas en esta computadora.
 
 Ejecutar:  python 04_juego_globos.py
-Opciones:  --tiempo 90   --globos 3   --control mano|cuerpo   --sin-sonido
-Teclas:    1/2/3 = jugar ese modo   ESPACIO = empezar   M = menú   R = reiniciar
+Opciones:  --tiempo 90   --globos 4   --control mano|cuerpo   --sin-sonido
+Teclas:    1/2/3 = elegir modo y cantidad   ESPACIO = continuar   M = menú   R = reiniciar
            P/ESPACIO = pausar/continuar   T = terminar partida
            F = pantalla completa    H = mostrar/ocultar mano    Q o ESC = salir
 """
@@ -62,6 +63,7 @@ COLORES = G.COLORES_GLOBO
 MODOS = {1: "COLORES", 2: "FORMAS", 3: "LETRAS"}
 CAMPO = {"COLORES": "color", "FORMAS": "forma", "LETRAS": "letra"}
 OPCIONES = {"COLORES": tuple(COLORES), "FORMAS": G.FORMAS_GLOBO, "LETRAS": G.LETRAS_GLOBO}
+NOMBRES_OPCIONES = {"COLORES": ("color", "colores"), "FORMAS": ("figura", "figuras"), "LETRAS": ("letra", "letras")}
 VELOCIDADES = {"Lenta": 0.6, "Normal": 1.0, "Rápida": 1.6}
 VISTAS = ("Cámara", "Fondo")
 FONDO_PARQUE = Path(__file__).resolve().parent / "recursos" / "parque.jpg"
@@ -302,6 +304,8 @@ class Juego:
         self.w, self.h = w, h
         self.S = S = min(h / 720, w / 1280)   # escala para cualquier resolución
         self.duracion, self.n_globos = duracion, n_globos
+        self.cantidades = range(1, min(3, n_globos or 3) + 1)
+        self.cantidad = max(self.cantidades)
         self.sonido = sonido
         self.efectos = Efectos(S)
         self.historial = Historial(archivo_historial)
@@ -322,6 +326,12 @@ class Juego:
         tw, th, sep = int(226 * S), int(190 * S), int(22 * S)
         x0 = self.centro_juego - (3 * tw + 2 * sep) // 2
         self.tarjetas = {modo: (x0 + i * (tw + sep), int(222 * S), tw, th) for i, modo in enumerate(MODOS.values())}
+        cw, ch, espacio = int(208 * S), int(147 * S), int(18 * S)
+        ancho = len(self.cantidades) * cw + (len(self.cantidades) - 1) * espacio
+        x_cantidad = self.centro_juego - ancho // 2
+        self.tarjetas_cantidad = {n: (x_cantidad + i * (cw + espacio), h // 2 - int(51 * S), cw, ch)
+                                  for i, n in enumerate(self.cantidades)}
+        self.volver_cantidad = (self.centro_juego - int(105 * S), h // 2 + int(120 * S), int(210 * S), int(50 * S))
         self.ajustes = {}
         for y, opciones in ((448, VELOCIDADES), (510, VISTAS)):
             for i, opcion in enumerate(opciones):
@@ -363,10 +373,12 @@ class Juego:
         self.modo = modo
         self.puntos = self.aciertos = self.errores = self.racha = self.mejor_racha = 0
         self.entregados = []
-        valores = random.sample(OPCIONES[modo], len(OPCIONES[modo]))
+        valores = OPCIONES[modo][:self.cantidad]
+        valores = random.sample(valores, len(valores))
+        total_globos = self.n_globos or self.cantidad
         self.globos = [Globo(int(30 * self.S), self.x_max_globos, self.h, self.S,
-                             (CAMPO[modo], valores[i % len(valores)]), (i + 0.5) / self.n_globos)
-                       for i in range(self.n_globos)]
+                             (CAMPO[modo], valores[i % len(valores)]), (i + 0.5) / total_globos)
+                       for i in range(total_globos)]
         self.sostenido = None
         self.dueno_globo = None
         self.perdido = 0.0
@@ -378,7 +390,9 @@ class Juego:
         self.objetivo = None
         self.nuevo_objetivo()
 
-    def iniciar_cuenta(self, modo):
+    def iniciar_cuenta(self, modo, cantidad=None):
+        if cantidad is not None:
+            self.cantidad = cantidad
         self.preparar_partida(modo)
         self.estado = "cuenta"
         self.t_cuenta = time.monotonic()
@@ -425,6 +439,8 @@ class Juego:
     def botones_visibles(self):
         if self.estado == "menu":
             return {**self.tarjetas, **self.ajustes, "historial": self.acceso_historial}
+        if self.estado == "cantidad":
+            return {**self.tarjetas_cantidad, "menu": self.volver_cantidad}
         if self.estado == "fin":
             return self.botones
         if self.estado == "historial":
@@ -447,7 +463,10 @@ class Juego:
     def activar_boton(self, clave):
         self.dwell_ui = {}
         if clave in self.tarjetas:
-            self.iniciar_cuenta(clave)
+            self.modo_elegido = clave
+            self.estado = "cantidad"
+        elif self.estado == "cantidad" and clave in self.tarjetas_cantidad:
+            self.iniciar_cuenta(self.modo_elegido, clave)
         elif clave in VELOCIDADES:
             self.velocidad = clave
         elif clave in VISTAS:
@@ -561,7 +580,7 @@ class Juego:
             return
         self.t_animacion += dt
         t = self.t_animacion
-        if self.estado in ("menu", "fin"):
+        if self.estado in ("menu", "cantidad", "fin"):
             return
 
         if self.estado == "cuenta":
@@ -679,7 +698,7 @@ class Juego:
         if self.estado in ("jugando", "cuenta", "pausa"):
             self.dibujar_zona(img, t, ahora < self.destello_hasta)
 
-        if self.estado != "menu":
+        if self.estado not in ("menu", "cantidad"):
             for g in self.globos:
                 if g is not self.sostenido:
                     g.dibujar(img, self.modo, t)
@@ -694,6 +713,8 @@ class Juego:
 
         if self.estado == "menu":
             self.dibujar_menu(img, t)
+        elif self.estado == "cantidad":
+            self.dibujar_cantidad(img)
         elif self.estado == "cuenta":
             self.dibujar_hud(img, t, cuenta=True)
             self.dibujar_cuenta(img, ahora)
@@ -863,6 +884,38 @@ class Juego:
         etiqueta = G.sprite_texto(texto or "Haz clic para escribir tu nombre", tam, color, sombra=False)
         G.pegar_izq(img, etiqueta, x + int(10 * S), y + h // 2)
 
+    def dibujar_cantidad(self, img):
+        S = self.S
+        cx, cy = self.centro_juego, self.h // 2
+        modo = self.modo_elegido
+        singular, plural = NOMBRES_OPCIONES[modo]
+        panel = G.sprite_panel(int(740 * S), int(405 * S), (21, 32, 55), 248, int(26 * S), (176, 202, 235), 3)
+        G.pegar_centro(img, panel, cx, cy - int(6 * S))
+        titulo = G.sprite_texto(f"¿Cuánt{'os' if modo == 'COLORES' else 'as'} {plural}?", int(49 * S))
+        G.pegar_centro(img, titulo, cx, cy - int(149 * S))
+        ayuda = G.sprite_texto("Elige con el dedo, el ratón o el número", int(22 * S), (182, 212, 240))
+        G.pegar_centro(img, ayuda, cx, cy - int(93 * S))
+
+        for n, rect in self.tarjetas_cantidad.items():
+            x, y, w, h = rect
+            borde = (158, 238, 243) if self.dwell_ui.get(n, 0) > 0 else (180, 198, 226)
+            tarjeta = G.sprite_panel(w, h, (38, 62, 105), 255, int(16 * S), borde, 2)
+            G.pegar(img, tarjeta, x, y)
+            texto = G.sprite_texto(f"{n} {singular if n == 1 else plural}", int(27 * S))
+            G.pegar_centro(img, texto, x + w // 2, y + int(36 * S))
+            for i, opcion in enumerate(OPCIONES[modo][:n]):
+                px = x + w // 2 + (i - (n - 1) / 2) * int(48 * S)
+                py = y + int(93 * S)
+                if modo == "COLORES":
+                    globo, ax, ay, _ = G.sprite_globo(COLORES[opcion], int(20 * S))
+                    G.pegar(img, globo, px - ax, py - ay)
+                else:
+                    sprite = (G.sprite_forma(opcion, int(45 * S), COLORES["AZUL"]) if modo == "FORMAS"
+                              else G.sprite_texto(opcion, int(42 * S), (196, 225, 255)))
+                    G.pegar_centro(img, sprite, px, py)
+            self.dibujar_progreso(img, n, rect)
+        self.dibujar_boton(img, "menu", self.volver_cantidad, "Volver al menú")
+
     def dibujar_cuenta(self, img, ahora):
         transcurrido = ahora - self.t_cuenta
         numero = 3 - int(transcurrido / 0.8)
@@ -976,12 +1029,12 @@ def main():
     parser.add_argument("--camara", type=int, default=0)
     parser.add_argument("--tiempo", type=int, default=90, help="duración de la partida en segundos")
     parser.add_argument("--dwell", type=float, default=0.4, help="opción antigua; ahora se agarra cerrando la pinza")
-    parser.add_argument("--globos", type=int, default=3, help="globos en pantalla")
+    parser.add_argument("--globos", type=int, help="total de globos en pantalla; por defecto, uno por opción elegida")
     parser.add_argument("--control", choices=["mano", "cuerpo"], default="mano",
                         help="mano: índice y pinza; cuerpo: muñecas con MediaPipe Pose y agarre con pinza")
     parser.add_argument("--sin-sonido", action="store_true")
     args = parser.parse_args()
-    if args.tiempo <= 0 or args.globos <= 0:
+    if args.tiempo <= 0 or (args.globos is not None and args.globos <= 0):
         parser.error("--tiempo y --globos deben ser mayores que cero")
 
     cap = U.abrir_camara(args.camara)
@@ -1056,17 +1109,26 @@ def main():
         if juego.escribir_nombre(tecla):
             continue
         tecla &= 0xFF
-        if tecla in (ord("q"), 27):
+        if tecla == 27 and juego.estado == "cantidad":
+            juego.activar_boton("menu")
+        elif tecla in (ord("q"), 27):
             break
         elif tecla in (ord("p"), ord(" ")) and juego.estado in ("jugando", "cuenta", "pausa"):
             juego.alternar_pausa()
         elif tecla == ord("t") and juego.estado in ("jugando", "cuenta", "pausa"):
             juego.terminar()
         elif tecla in (ord("1"), ord("2"), ord("3")):
-            juego.iniciar_cuenta(MODOS[int(chr(tecla))])
-        elif tecla == ord(" ") and juego.estado in ("menu", "fin"):
+            numero = int(chr(tecla))
+            if juego.estado == "cantidad":
+                if numero in juego.cantidades:
+                    juego.activar_boton(numero)
+            else:
+                juego.activar_boton(MODOS[numero])
+        elif tecla == ord(" ") and juego.estado == "menu":
+            juego.activar_boton(juego.modo)
+        elif tecla == ord(" ") and juego.estado == "fin":
             juego.iniciar_cuenta(juego.modo)
-        elif tecla == ord("r"):
+        elif tecla == ord("r") and juego.estado != "cantidad":
             juego.iniciar_cuenta(juego.modo)
         elif tecla == ord("m"):
             juego.ir_menu()
